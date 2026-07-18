@@ -119,6 +119,32 @@ Deploy:    один Go-бинарь + Postgres (Railway/VPS)
 
 ---
 
+## 🗂 Доска проекта (GitHub Projects)
+
+Доска: [Challenger #3](https://github.com/users/Sitleman/projects/3). Колонки (поле `Status`):
+
+```
+Открыт → Проработка → Аппрув / Нужна информация → В работе → Ревью → Закрыт
+```
+
+**Средние 4 статуса** ставит процесс `do-task` командой:
+
+```
+make set-status ISSUE=<N> STATUS='В работе'
+```
+
+(логика — `scripts/set-status.sh`, тесты — `make test-scripts`).
+
+**Крайние 2 статуса** (`Открыт`, `Закрыт`) через API не переключить — их держат
+встроенные workflow проекта. Включаются **один раз руками** в ⚙️ **Workflows** доски
+(в каждом workflow целевой `Status` выбирается вручную из наших опций — не оставляйте дефолтный `Todo`/`Done`):
+
+1. **Auto-add to project** — задать фильтр репозитория `Sitleman/challenger` (например `is:issue,pr`) → карточки заводятся сами.
+2. **Item added to project** → выбрать `Status` = `Открыт`.
+3. **Item closed** → выбрать `Status` = `Закрыт` (срабатывает и на merged PR, и на закрытый issue).
+
+---
+
 ## 🗺 План реализации
 
 ### 🔴 Шаг 0 — Спайк (блокер, делаем ПЕРВЫМ)

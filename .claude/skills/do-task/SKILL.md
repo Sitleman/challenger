@@ -26,21 +26,36 @@ All of these mean: write the plan (or ask questions), post it, wait for approval
 
 1. **Input** — user hands over an issue (short description + their vision).
 
-2. **Elaborate** (my zone) — run `superpowers:brainstorming` on this specific piece, then produce **exactly one** of:
+2. **Elaborate** (my zone) — board status → `Проработка`. Run `superpowers:brainstorming` on this specific piece, then produce **exactly one** of:
    - **Plan** — tech breakdown (tables / endpoints / files, edge-cases, Definition of Done). Post as an issue comment.
    - **Questions** — if the right solution is non-obvious, ask via `AskUserQuestion` on real forks *before* writing the plan. Don't guess on architecture / UX / DB-schema.
 
+   After posting the plan or questions → board status `Аппрув / Нужна информация`.
+
 3. **Gate №1 — plan approval.** Do not write code until approved.
 
-4. **Implement** (my zone) — branch `CH-<issue>-<short-desc-en>`, then `superpowers:test-driven-development` (test → code → refactor). Commits `CH-<issue>: <short desc en>`.
+4. **Implement** (my zone) — branch `CH-<issue>-<short-desc-en>` → board status `В работе`, then `superpowers:test-driven-development` (test → code → refactor). Commits `CH-<issue>: <short desc en>`.
 
 5. **Self-review** (my zone) — `/code-review` on the diff and fix findings, linters clean, then `superpowers:verification-before-completion` (tests green, checked by hand).
 
-6. **PR** (my zone) — title `CH-<issue>: <short desc en>`, description in Russian (1–5 sentences), `Closes #N`.
+6. **PR** (my zone) — open the PR → board status `Ревью`. Title `CH-<issue>: <short desc en>`, description in Russian (1–5 sentences), `Closes #N`.
 
 7. **Gate №2 — merge.** Only the user merges (squash, delete branch).
 
 8. **Deploy** — manual for now.
+
+## Board status
+
+Set the project card's status from the checklist above (not from memory):
+
+```
+make set-status ISSUE=<N> STATUS='Проработка'
+make set-status ISSUE=<N> STATUS='Аппрув / Нужна информация'
+make set-status ISSUE=<N> STATUS='В работе'
+make set-status ISSUE=<N> STATUS='Ревью'
+```
+
+`Открыт` (issue added) and `Закрыт` (issue closed / PR merged) are set automatically by the project's built-in workflows — never set them by hand. See `README.md` → «Доска проекта».
 
 ## Notes
 
