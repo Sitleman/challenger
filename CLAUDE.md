@@ -85,6 +85,7 @@
 
 ### Git
 - **Коммит:** `CH-<issue>: <Short description on english 1-10 words>`
+- **Без трейлеров:** в сообщениях коммитов не добавляем `Co-Authored-By` и `Claude-Session`.
 - **Ветка:** `CH-<issue>-<short description on english 1-5 words>`
 - **PR title:** `CH-<issue>: <Short description on english 1-10 words>`
 - **PR description:** что сделано в этом PR, 1–5 предложений на русском. В конце `Closes #N`.
