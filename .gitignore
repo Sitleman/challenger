@@ -1,0 +1,10 @@
+
+# secrets
+.env
+spike/.env
+
+# go
+/spike/**/message-reaction-bot
+
+# spike build artifact
+spike/message-reaction/message-reaction
