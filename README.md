@@ -28,7 +28,7 @@ Challenger — Telegram mini app для командных челленджей 
 ### Состояние 2 — вступил
 - **Твой счёт:** крупно `22/23` + «пропусков: 1 из 3»
 - **Статус сегодня** (явно, крупно):
-  - ⬜ «Сегодня не закрыто» + подсказка «выложи фото/видео с #пруф в тему» + кнопка «Открыть тему»
+  - ⬜ «Сегодня не закрыто» + подсказка «выложи фото/видео с #task в тему» + кнопка «Открыть тему»
   - 🟡 «Ждёт подтверждения (нужно ещё N реакций)»
   - 🟢 «Сегодня закрыто ✅»
 - **Общий календарь-heatmap** (все участники, статусы 🟢/🟡/⬜ по дням)
@@ -71,7 +71,7 @@ Challenger — Telegram mini app для командных челленджей 
 
 | Триггер | Действие |
 |---|---|
-| `#пруф` фото/видео в теме | 🟡 мягкий ОК, запись дня, старт окна подтверждения |
+| `#task` фото/видео в теме | 🟡 мягкий ОК, запись дня, старт окна подтверждения |
 | Реакция на пруф | пересчёт; ≥2 → 🟢 |
 | Окно закрылось без 2 реакций | ⬜ пропуск (−1 из 3) |
 | 21:00 | пинг тем, у кого сегодня нет пруфа |
@@ -87,8 +87,8 @@ Challenger — Telegram mini app для командных челленджей 
 ## 🗂 Данные (минимум)
 
 - **Challenge:** id, month, title, description, start/end, status, topic_id, winner(s)
-- **Participant:** user_id, challenge_id, joined_at, tag_granted (bool)
-- **Day:** user_id, challenge_id, date, message_id, status(🟡/🟢/⬜), reactions_count, confirm_deadline
+- **Proof:** challenge_id, message_id, user_id, user_name, day — пруф `#task`; участники выводятся из пруфов
+- **Reaction:** challenge_id, message_id, user_id — кто подтвердил пруф; статус дня вычисляется (≥2 → ✅)
 - **Idea:** text, author, created_at, status(backlog / voting / chosen)
 
 ---
@@ -103,12 +103,12 @@ Challenger — Telegram mini app для командных челленджей 
 ```
 Bot:       Go + telego                    (long polling на старте)
 Backend:   Go + chi                        (бот и API в одном бинаре)
-DB:        PostgreSQL + sqlc               (пишем SQL → типобезопасный Go)
+DB:        SQLite + goose + sqlc           (пишем SQL → типобезопасный Go; ADR 0002)
 Jobs:      robfig/cron + горутины          (пинг 21:00, окна подтверждения)
 Frontend:  React + Vite + TS
 UI-kit:    @telegram-apps/telegram-ui      (нативные TG-компоненты)
 Auth:      валидация initData на бэке
-Deploy:    один Go-бинарь + Postgres (Railway/VPS)
+Deploy:    один Go-бинарь + файл SQLite (Railway/VPS)
 ```
 
 **Ключевые факты, которые уже выяснили:**
@@ -135,8 +135,8 @@ Deploy:    один Go-бинарь + Postgres (Railway/VPS)
 
 ### 🟠 Фундамент
 - [ ] Репозиторий, структура папок, `docker-compose` с Postgres
-- [ ] SQL-схема + миграции: `Challenge / Participant / Day / Idea`
-- [ ] sqlc-генерация, базовый слой БД
+- [x] SQL-схема + миграции: `challenges / proofs / reactions`
+- [x] sqlc-генерация, базовый слой БД
 - [ ] Скелет: бот (telego) + API (chi) в одном бинаре
 - [ ] Пустой React+Vite аппит, открывается в TG, читает `initData`
 - [ ] Валидация `initData` на бэке → `user_id`
@@ -148,8 +148,8 @@ Deploy:    один Go-бинарь + Postgres (Railway/VPS)
 ### 🟢 MVP (полный месячный цикл для одной команды)
 
 **Ядро — бот:**
-1. [ ] `#пруф` фото/видео в теме → `Day` 🟡 + старт окна подтверждения
-2. [ ] Событие `message_reaction` → пересчёт счётчика в БД → ≥2 = 🟢
+1. [x] `#task` в теме челленджа → пруф дня 🟡
+2. [x] Событие `message_reaction` → множество реагирующих в БД → ≥2 = ✅
 3. [ ] Окно закрылось без 2 реакций → ⬜ (пропуск, −1 из 3)
 4. [ ] Пинг 21:00 тем, у кого нет пруфа (cron)
 

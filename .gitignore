@@ -8,3 +8,8 @@ spike/.env
 
 # spike build artifact
 spike/message-reaction/message-reaction
+
+# sqlite
+*.db
+*.db-shm
+*.db-wal
