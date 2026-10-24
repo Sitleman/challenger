@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
+	"github.com/Sitleman/challenger/internal/db"
 	"github.com/mymmrac/telego"
 	"github.com/valyala/fasthttp"
 )
 
-func Run(ctx context.Context, token string) error {
+const statsRefreshDelay = 3 * time.Second
+
+func Run(ctx context.Context, token string, q *db.Queries, loc *time.Location) error {
 	b, err := newBot(token)
 	if err != nil {
 		return err
@@ -22,24 +26,19 @@ func Run(ctx context.Context, token string) error {
 	log.Printf("bot @%s (id=%d) started", me.Username, me.ID)
 
 	updates, err := b.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
-		AllowedUpdates: []string{"message"},
+		AllowedUpdates: []string{"message", "message_reaction"},
 		Timeout:        30,
 	})
 	if err != nil {
 		return err
 	}
 
-	done := make(chan struct{})
-	go func() {
-		consume(ctx, b, updates)
-		close(done)
-	}()
+	h := newHandler(ctx, b, me.Username, q, loc)
+	go h.refreshAtMidnight(ctx)
 
-	select {
-	case <-ctx.Done():
-		log.Println("shutting down")
-	case <-done:
-	}
+	consume(ctx, h, updates)
+	log.Println("shutting down")
+	h.stats.wait()
 	return nil
 }
 
@@ -52,21 +51,8 @@ func newBot(token string) (*telego.Bot, error) {
 	)
 }
 
-func consume(ctx context.Context, b *telego.Bot, updates <-chan telego.Update) {
+func consume(ctx context.Context, h *handler, updates <-chan telego.Update) {
 	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
-		handleMessage(ctx, b, update.Message)
-	}
-}
-
-func handleMessage(ctx context.Context, b *telego.Bot, msg *telego.Message) {
-	_, err := b.SendMessage(ctx, &telego.SendMessageParams{
-		ChatID: telego.ChatID{ID: msg.Chat.ID},
-		Text:   replyText(msg),
-	})
-	if err != nil {
-		log.Printf("send message: %v", err)
+		h.handle(ctx, update)
 	}
 }

@@ -8,18 +8,29 @@ import (
 
 	"github.com/Sitleman/challenger/internal/bot"
 	"github.com/Sitleman/challenger/internal/config"
+	"github.com/Sitleman/challenger/internal/db"
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	if err := bot.Run(ctx, cfg.BotToken); err != nil {
-		log.Fatal(err)
+	conn, err := db.Open(ctx, cfg.DBPath)
+	if err != nil {
+		return err
 	}
+	defer func() { _ = conn.Close() }()
+
+	return bot.Run(ctx, cfg.BotToken, db.New(conn), cfg.Location)
 }

@@ -18,7 +18,7 @@
 
 ## Deploy
 
-Руками (один Go-бинарь + Postgres). CI/CD — отдельный issue после MVP.
+Руками (один Go-бинарь + файл SQLite). CI/CD — отдельный issue после MVP.
 
 ---
 
@@ -119,7 +119,6 @@
 /migrations/           — SQL-миграции (goose, NNNN_description.sql)
 /web/                  — React + Vite + TS
 /docs/decisions/       — ADR
-docker-compose.yml     — Postgres для локалки
 Makefile               — make run / test / migrate / sqlc
 .env.example           — ключи без значений (.env в .gitignore)
 ```
@@ -144,5 +143,5 @@ Makefile               — make run / test / migrate / sqlc
 
 ## Стек (детали — в README)
 
-Go + telego (бот) · Go + chi (API, один бинарь с ботом) · PostgreSQL + sqlc ·
+Go + telego (бот) · Go + chi (API, один бинарь с ботом) · SQLite + goose + sqlc ·
 robfig/cron (джобы) · React + Vite + TS · @telegram-apps/telegram-ui · валидация initData.
