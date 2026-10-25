@@ -9,7 +9,7 @@ Challenger — Telegram mini app для командных челленджей 
 
 **Запуск**
 1. Создайте бота у [@BotFather](https://t.me/BotFather), добавьте в группу **админом** с правом закреплять сообщения.
-2. `cp .env.example .env` и впишите `BOT_TOKEN`.
+2. `cp .env.example .env` и впишите `BOT_TOKEN`. Разрешённые чаты (`ALLOWED_CHAT_IDS`) и админы бота (`ADMIN_USER_IDS`) для Docker заданы в `docker-compose.yml`, для `make run` — в `.env`.
 3. Запуск:
    ```bash
    make run                       # локально

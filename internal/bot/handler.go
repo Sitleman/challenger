@@ -25,13 +25,18 @@ type handler struct {
 	q        *db.Queries
 	loc      *time.Location
 	allowed  map[int64]bool
+	admins   map[int64]bool
 	stats    *refresher
 }
 
 func newHandler(ctx context.Context, b *telego.Bot, username string, q *db.Queries, cfg config.Config) *handler {
-	h := &handler{bot: b, username: username, q: q, loc: cfg.Location, allowed: map[int64]bool{}}
-	for _, id := range cfg.AllowedChatIDs {
-		h.allowed[id] = true
+	h := &handler{
+		bot:      b,
+		username: username,
+		q:        q,
+		loc:      cfg.Location,
+		allowed:  idSet(cfg.AllowedChatIDs),
+		admins:   idSet(cfg.AdminUserIDs),
 	}
 	h.stats = newRefresher(statsRefreshDelay, func(challengeID int64) {
 		err := retry(ctx, renderAttempts, renderRetryDelay, func() error {
@@ -42,6 +47,14 @@ func newHandler(ctx context.Context, b *telego.Bot, username string, q *db.Queri
 		}
 	})
 	return h
+}
+
+func idSet(ids []int64) map[int64]bool {
+	set := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		set[id] = true
+	}
+	return set
 }
 
 func (h *handler) handle(ctx context.Context, update telego.Update) {
@@ -133,6 +146,9 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 }
 
 func (h *handler) isAdmin(ctx context.Context, chatID, userID int64) (bool, error) {
+	if h.admins[userID] {
+		return true, nil
+	}
 	member, err := h.bot.GetChatMember(ctx, &telego.GetChatMemberParams{
 		ChatID: telego.ChatID{ID: chatID}, UserID: userID,
 	})
