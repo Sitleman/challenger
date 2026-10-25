@@ -6,6 +6,8 @@ services:
     env_file: .env
     environment:
       DB_PATH: /data/challenger.db
+      ALLOWED_CHAT_IDS: "-1004391088785,-1003436893374"
+      ADMIN_USER_IDS: "532029049"
     volumes:
       - challenger-data:/data
     stop_grace_period: 60s
