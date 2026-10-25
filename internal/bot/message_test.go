@@ -118,3 +118,30 @@ func TestMonthStart(t *testing.T) {
 		t.Fatalf("monthKey = %q, want 2026-11", monthKey(got))
 	}
 }
+
+func TestEditedSameDay(t *testing.T) {
+	loc := time.FixedZone("MSK", 3*60*60)
+	at := func(month time.Month, day, hour, minute int) int64 {
+		return time.Date(2026, month, day, hour, minute, 0, 0, time.UTC).Unix()
+	}
+	tests := []struct {
+		name     string
+		sent     int64
+		editedAt int64
+		want     bool
+	}{
+		{name: "edited before local midnight", sent: at(time.October, 25, 6, 0), editedAt: at(time.October, 25, 20, 59), want: true},
+		{name: "edited after local midnight", sent: at(time.October, 25, 20, 0), editedAt: at(time.October, 25, 21, 1), want: false},
+		{name: "same local day across utc midnight", sent: at(time.October, 24, 22, 0), editedAt: at(time.October, 25, 6, 0), want: true},
+		{name: "same day number next month", sent: at(time.October, 25, 6, 0), editedAt: at(time.November, 25, 6, 0), want: false},
+		{name: "not edited", sent: at(time.October, 25, 6, 0), editedAt: 0, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msg := &telego.Message{Date: tt.sent, EditDate: tt.editedAt}
+			if got := editedSameDay(msg, loc); got != tt.want {
+				t.Fatalf("editedSameDay = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}

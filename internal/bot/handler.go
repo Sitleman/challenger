@@ -65,6 +65,8 @@ func (h *handler) handle(ctx context.Context, update telego.Update) {
 		h.backups.request(ctx, update.Message.From.ID)
 	case update.Message != nil && h.isAllowed(update.Message.Chat.ID):
 		h.handleMessage(ctx, update.Message)
+	case update.EditedMessage != nil && h.isAllowed(update.EditedMessage.Chat.ID):
+		h.handleEditedMessage(ctx, update.EditedMessage)
 	case update.MessageReaction != nil && h.isAllowed(update.MessageReaction.Chat.ID):
 		h.handleReaction(ctx, update.MessageReaction)
 	}
@@ -181,6 +183,15 @@ func (h *handler) deleteMessage(ctx context.Context, chatID int64, messageID int
 	}
 }
 
+func (h *handler) handleEditedMessage(ctx context.Context, msg *telego.Message) {
+	if msg.From == nil || msg.From.IsBot {
+		return
+	}
+	if hasHashtag(msg, challenge.Hashtag) && editedSameDay(msg, h.loc) {
+		h.recordProof(ctx, msg)
+	}
+}
+
 func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 	t := topicOf(msg)
 	sentAt := time.Unix(msg.Date, 0).In(h.loc)
@@ -208,7 +219,12 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		log.Printf("create proof: %v", err)
 		return
 	}
-	h.react(ctx, t.chatID, msg.MessageID, trackedReaction)
+	count, err := h.q.CountReactions(ctx, db.CountReactionsParams{ChallengeID: c.ID, MessageID: int64(msg.MessageID)})
+	if err != nil {
+		log.Printf("count reactions: %v", err)
+		return
+	}
+	h.react(ctx, t.chatID, msg.MessageID, confirmationReaction(count))
 	h.stats.schedule(c.ID)
 }
 
