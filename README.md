@@ -1,6 +1,61 @@
 # challenger
 Challenger — Telegram mini app для командных челленджей с помесячным циклом. Каждый месяц команда выбирает общий челлендж, участники ежедневно выкладывают фото/видео-подтверждения в чат, а выполнение засчитывается по реакциям коллег. Приложение показывает общий календарь прогресса, личный счёт и «зал славы» с победителями прошлых месяцев, по максимуму переиспользуя нативные возможности Telegram.
 
+# 🚀 Get started
+
+### 1. Бот и группа
+1. Создайте бота у [@BotFather](https://t.me/BotFather) и сохраните токен.
+2. Добавьте бота в группу и сделайте **админом** с правом закреплять сообщения — иначе не придут реакции (ADR [0001](docs/decisions/0001-message-reaction.md)).
+
+### 2. Конфиг
+```bash
+cp .env.example .env
+```
+
+| Переменная | Что |
+|---|---|
+| `BOT_TOKEN` | токен от BotFather, обязателен |
+| `CHALLENGE_TZ` | часовой пояс челленджа, по умолчанию `Europe/Moscow` |
+| `DB_PATH` | файл SQLite, по умолчанию `challenger.db`; `docker-compose.yml` задаёт `/data/challenger.db` поверх `.env` |
+
+### 3. Запуск локально
+Нужен Go 1.26+.
+```bash
+make run
+make test
+```
+
+### 4. Запуск на сервере (Docker)
+Нужны Docker и Compose v2.
+```bash
+git clone https://github.com/Sitleman/challenger.git && cd challenger
+cp .env.example .env
+sudo systemctl enable --now docker
+docker compose up -d --build
+docker compose logs -f bot
+```
+
+- Контейнер поднимается сам после падения бота и рестарта сервера (`restart: unless-stopped`).
+- База лежит на томе `challenger-data` и переживает пересоздание контейнера. Удаляет её только `docker compose down -v`.
+- Обновление: `git pull && docker compose up -d --build`, миграции накатываются при старте.
+- Бэкап — архив всего тома вместе с WAL:
+  ```bash
+  docker compose stop bot
+  docker run --rm -v challenger-data:/data -v "$PWD":/backup busybox tar czf /backup/challenger-data.tgz -C /data .
+  docker compose start bot
+  ```
+- Перенос существующей базы — после первого `docker compose up`. Остановите старый бот, чтобы SQLite слил WAL в основной файл, положите файл рядом с `docker-compose.yml` и подставьте его имя вместо `stage.db`:
+  ```bash
+  docker compose stop bot
+  docker run --rm -v challenger-data:/data -v "$PWD":/src:ro busybox \
+    sh -c 'cp /src/stage.db /data/new.db && rm -f /data/challenger.db* && mv /data/new.db /data/challenger.db && chown -R 65532:65532 /data'
+  docker compose start bot
+  ```
+- Бот запускается одним экземпляром: второй с тем же токеном получит `409 Conflict` от long polling.
+
+### 5. В группе
+Админ пишет в теме `/start_challenge` — бот публикует и закрепляет статистику. Участники выкладывают пруфы с `#task`, день засчитывается по реакциям.
+
 # 📄 ФИНАЛЬНЫЙ СКЕЛЕТ — 3 экрана
 
 ## Навигация (bottom nav, 3 вкладки)
@@ -134,7 +189,7 @@ Deploy:    один Go-бинарь + файл SQLite (Railway/VPS)
 ---
 
 ### 🟠 Фундамент
-- [ ] Репозиторий, структура папок, `docker-compose` с Postgres
+- [x] Репозиторий, структура папок, `docker-compose` (SQLite вместо Postgres — ADR [0002](docs/decisions/0002-sqlite.md))
 - [x] SQL-схема + миграции: `challenges / proofs / reactions`
 - [x] sqlc-генерация, базовый слой БД
 - [ ] Скелет: бот (telego) + API (chi) в одном бинаре
