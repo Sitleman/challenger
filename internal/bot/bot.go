@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -15,6 +16,7 @@ import (
 const statsRefreshDelay = 3 * time.Second
 
 func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
+	startedAt := time.Now()
 	b, err := newBot(cfg.BotToken)
 	if err != nil {
 		return err
@@ -26,20 +28,30 @@ func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
 	}
 	log.Printf("bot @%s (id=%d) started", me.Username, me.ID)
 
-	updates, err := b.UpdatesViaLongPolling(ctx, &telego.GetUpdatesParams{
-		AllowedUpdates: []string{"message", "message_reaction"},
-		Timeout:        30,
-	})
-	if err != nil {
-		return err
-	}
+	workCtx, stopWork := context.WithCancel(ctx)
+	defer stopWork()
+	h := newHandler(workCtx, b, me.Username, q, cfg)
+	go h.refreshAtMidnight(workCtx)
 
-	h := newHandler(ctx, b, me.Username, q, cfg)
-	go h.refreshAtMidnight(ctx)
+	updates := make(chan telego.Update)
+	polled := make(chan error, 1)
+	go func() {
+		defer close(updates)
+		polled <- poll(workCtx, b.GetUpdates, telego.GetUpdatesParams{
+			AllowedUpdates: []string{"message", "message_reaction"},
+			Timeout:        30,
+		}, pollRetryDelay, updates)
+	}()
 
-	consume(ctx, h, updates)
-	log.Println("shutting down")
+	consume(workCtx, h, updates)
+	stopWork()
 	h.stats.wait()
+
+	var dup *duplicateInstanceError
+	if errors.As(<-polled, &dup) {
+		standBy(ctx, b, cfg, me.Username, startedAt, dup)
+	}
+	log.Println("shutting down")
 	return nil
 }
 
