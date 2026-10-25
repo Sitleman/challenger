@@ -26,18 +26,28 @@ var cells = map[Status]string{
 }
 
 func (b Board) Render(now time.Time) string {
-	lines := []string{b.title()}
+	lines := []string{b.title(), b.period(), "", "👥 <b>Участники</b>"}
+	if len(b.Participants) == 0 {
+		lines = append(lines, "Пока никто не отправил "+Hashtag)
+	}
 	for _, p := range b.Participants {
 		lines = append(lines, p.summary())
 	}
-	lines = append(lines, legend, "")
-	lines = append(lines, b.table()...)
-	lines = append(lines, "", updatedAt(now.In(b.Month.Location())))
+	if len(b.Participants) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, b.table()...)
+	}
+	lines = append(lines, "", legend, updatedAt(now.In(b.Month.Location())))
 	return strings.Join(lines, "\n")
 }
 
 func (b Board) title() string {
-	return fmt.Sprintf("📊 %s %d · день %d/%d", monthNames[b.Month.Month()-1], b.Month.Year(), b.Shown, b.DaysInMonth)
+	return fmt.Sprintf("📊 Челлендж · %s %d", monthNames[b.Month.Month()-1], b.Month.Year())
+}
+
+func (b Board) period() string {
+	start := b.Month.AddDate(0, 0, b.StartDay-1).Format("02.01")
+	return fmt.Sprintf("Старт %s · день %d из %d", start, max(b.Shown-b.StartDay+1, 0), b.DaysInMonth-b.StartDay+1)
 }
 
 func (p Participant) summary() string {
@@ -49,18 +59,15 @@ func (p Participant) summary() string {
 }
 
 func (b Board) table() []string {
-	if len(b.Participants) == 0 {
-		return []string{"Пока никто не отправил " + Hashtag}
-	}
 	header := code("     ")
 	for _, p := range b.Participants {
 		header += cellGap + p.Avatar
 	}
 	rows := []string{header}
-	for day := 1; day <= b.Shown; day++ {
+	for day := b.StartDay; day <= b.Shown; day++ {
 		row := code(b.Month.AddDate(0, 0, day-1).Format("02.01"))
 		for _, p := range b.Participants {
-			row += cellGap + cells[p.Statuses[day-1]]
+			row += cellGap + cells[p.Statuses[day-b.StartDay]]
 		}
 		rows = append(rows, row)
 	}

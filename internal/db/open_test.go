@@ -75,6 +75,10 @@ func TestReactionsAreCountedOncePerUser(t *testing.T) {
 	if got := reactors(t, q, c.ID); got != 2 {
 		t.Fatalf("reactors after adds = %d, want 2", got)
 	}
+	count, err := q.CountReactions(ctx, CountReactionsParams{ChallengeID: c.ID, MessageID: 42})
+	if err != nil || count != 2 {
+		t.Fatalf("CountReactions = %d, %v, want 2", count, err)
+	}
 
 	if err := q.RemoveReaction(ctx, RemoveReactionParams{ChallengeID: c.ID, MessageID: 42, UserID: 1}); err != nil {
 		t.Fatalf("RemoveReaction: %v", err)
@@ -87,7 +91,7 @@ func TestReactionsAreCountedOncePerUser(t *testing.T) {
 func seedChallenge(t *testing.T, q *Queries, chatID int64) Challenge {
 	t.Helper()
 	c, err := q.CreateChallenge(context.Background(), CreateChallengeParams{
-		ChatID: chatID, ThreadID: 5, Month: "2026-10", StatsMessageID: 1,
+		ChatID: chatID, ThreadID: 5, Month: "2026-10", StatsMessageID: 1, StartDay: 24,
 	})
 	if err != nil {
 		t.Fatalf("CreateChallenge: %v", err)

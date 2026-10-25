@@ -10,6 +10,7 @@ type Challenge struct {
 	ThreadID       int64
 	Month          string
 	StatsMessageID int64
+	StartDay       int64
 }
 
 type Proof struct {

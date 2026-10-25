@@ -56,10 +56,12 @@ func entityText(units []uint16, e telego.MessageEntity) string {
 
 func displayName(u *telego.User) string {
 	switch {
+	case u.FirstName != "" && u.Username != "":
+		return u.FirstName + " (@" + u.Username + ")"
 	case u.FirstName != "":
 		return u.FirstName
 	case u.Username != "":
-		return u.Username
+		return "@" + u.Username
 	default:
 		return strconv.FormatInt(u.ID, 10)
 	}

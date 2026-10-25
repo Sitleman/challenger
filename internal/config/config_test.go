@@ -1,9 +1,18 @@
 package config
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
+
+func setRequired(t *testing.T) {
+	t.Helper()
+	t.Setenv("BOT_TOKEN", "secret-token")
+	t.Setenv("ALLOWED_CHAT_IDS", "-100")
+}
 
 func TestLoadReturnsTokenFromEnv(t *testing.T) {
-	t.Setenv("BOT_TOKEN", "secret-token")
+	setRequired(t)
 
 	cfg, err := Load()
 	if err != nil {
@@ -15,6 +24,7 @@ func TestLoadReturnsTokenFromEnv(t *testing.T) {
 }
 
 func TestLoadErrorsWhenTokenMissing(t *testing.T) {
+	setRequired(t)
 	t.Setenv("BOT_TOKEN", "")
 
 	_, err := Load()
@@ -24,7 +34,7 @@ func TestLoadErrorsWhenTokenMissing(t *testing.T) {
 }
 
 func TestLoadDefaults(t *testing.T) {
-	t.Setenv("BOT_TOKEN", "secret-token")
+	setRequired(t)
 	t.Setenv("DB_PATH", "")
 	t.Setenv("CHALLENGE_TZ", "")
 
@@ -41,7 +51,7 @@ func TestLoadDefaults(t *testing.T) {
 }
 
 func TestLoadOverrides(t *testing.T) {
-	t.Setenv("BOT_TOKEN", "secret-token")
+	setRequired(t)
 	t.Setenv("DB_PATH", "/data/stage.db")
 	t.Setenv("CHALLENGE_TZ", "Asia/Yekaterinburg")
 
@@ -55,10 +65,34 @@ func TestLoadOverrides(t *testing.T) {
 }
 
 func TestLoadErrorsOnUnknownTimezone(t *testing.T) {
-	t.Setenv("BOT_TOKEN", "secret-token")
+	setRequired(t)
 	t.Setenv("CHALLENGE_TZ", "Mars/Olympus")
 
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error for unknown CHALLENGE_TZ, got nil")
+	}
+}
+
+func TestLoadParsesAllowedChatIDs(t *testing.T) {
+	setRequired(t)
+	t.Setenv("ALLOWED_CHAT_IDS", " -1004391088785, -100200 ,")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []int64{-1004391088785, -100200}; !reflect.DeepEqual(cfg.AllowedChatIDs, want) {
+		t.Fatalf("AllowedChatIDs = %v, want %v", cfg.AllowedChatIDs, want)
+	}
+}
+
+func TestLoadErrorsOnBadAllowedChatIDs(t *testing.T) {
+	for _, value := range []string{"", " , ", "-100,abc"} {
+		setRequired(t)
+		t.Setenv("ALLOWED_CHAT_IDS", value)
+
+		if _, err := Load(); err == nil {
+			t.Errorf("ALLOWED_CHAT_IDS=%q: expected error, got nil", value)
+		}
 	}
 }

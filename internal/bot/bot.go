@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/Sitleman/challenger/internal/config"
 	"github.com/Sitleman/challenger/internal/db"
 	"github.com/mymmrac/telego"
 	"github.com/valyala/fasthttp"
@@ -13,8 +14,8 @@ import (
 
 const statsRefreshDelay = 3 * time.Second
 
-func Run(ctx context.Context, token string, q *db.Queries, loc *time.Location) error {
-	b, err := newBot(token)
+func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
+	b, err := newBot(cfg.BotToken)
 	if err != nil {
 		return err
 	}
@@ -33,7 +34,7 @@ func Run(ctx context.Context, token string, q *db.Queries, loc *time.Location) e
 		return err
 	}
 
-	h := newHandler(ctx, b, me.Username, q, loc)
+	h := newHandler(ctx, b, me.Username, q, cfg)
 	go h.refreshAtMidnight(ctx)
 
 	consume(ctx, h, updates)
