@@ -54,6 +54,15 @@ func entityText(units []uint16, e telego.MessageEntity) string {
 	return string(utf16.Decode(units[e.Offset : e.Offset+e.Length]))
 }
 
+func editedSameDay(msg *telego.Message, loc *time.Location) bool {
+	if msg.EditDate == 0 {
+		return false
+	}
+	sent := time.Unix(msg.Date, 0).In(loc)
+	edited := time.Unix(msg.EditDate, 0).In(loc)
+	return sent.Format(time.DateOnly) == edited.Format(time.DateOnly)
+}
+
 func displayName(u *telego.User) string {
 	switch {
 	case u.FirstName != "" && u.Username != "":

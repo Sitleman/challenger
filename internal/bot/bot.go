@@ -39,7 +39,7 @@ func Run(ctx context.Context, cfg config.Config, conn *sql.DB) error {
 	go func() {
 		defer close(updates)
 		polled <- poll(workCtx, b.GetUpdates, telego.GetUpdatesParams{
-			AllowedUpdates: []string{"message", "message_reaction"},
+			AllowedUpdates: []string{"message", "edited_message", "message_reaction"},
 			Timeout:        30,
 		}, pollRetryDelay, updates)
 	}()
