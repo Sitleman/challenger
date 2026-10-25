@@ -3,14 +3,28 @@ Challenger — Telegram mini app для командных челленджей 
 
 # 🚀 Get started
 
+**Зависимости**
+- Локально: Go 1.26+ — `brew install go`.
+- Сервер (Ubuntu/Debian): Docker с Compose — `curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker`.
+
+**Запуск**
 1. Создайте бота у [@BotFather](https://t.me/BotFather), добавьте в группу **админом** с правом закреплять сообщения.
 2. `cp .env.example .env` и впишите `BOT_TOKEN`.
 3. Запуск:
    ```bash
-   make run                       # локально, Go 1.26+
+   make run                       # локально
    docker compose up -d --build   # на сервере: автоперезапуск, база на томе challenger-data
    ```
 4. В теме группы админ пишет `/start_challenge`, участники выкладывают пруфы с `#task`.
+
+Обновление на сервере — `git pull && docker compose up -d --build`.
+
+**Бэкап и восстановление** — при остановленном боте (`docker compose stop bot`, после — `docker compose start bot`):
+```bash
+docker run --rm -v challenger-data:/data -v "$PWD":/b busybox tar czf /b/backup.tgz -C /data .
+docker run --rm -v challenger-data:/data -v "$PWD":/b busybox sh -c \
+  'tar tzf /b/backup.tgz >/dev/null && rm -rf /data/* && tar xzf /b/backup.tgz -C /data && chown -R 65532:65532 /data'
+```
 
 # 📄 ФИНАЛЬНЫЙ СКЕЛЕТ — 3 экрана
 
