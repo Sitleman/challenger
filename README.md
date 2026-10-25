@@ -1,6 +1,31 @@
 # challenger
 Challenger — Telegram mini app для командных челленджей с помесячным циклом. Каждый месяц команда выбирает общий челлендж, участники ежедневно выкладывают фото/видео-подтверждения в чат, а выполнение засчитывается по реакциям коллег. Приложение показывает общий календарь прогресса, личный счёт и «зал славы» с победителями прошлых месяцев, по максимуму переиспользуя нативные возможности Telegram.
 
+# 🚀 Get started
+
+**Зависимости**
+- Локально: Go 1.26+ — `brew install go`.
+- Сервер (Ubuntu/Debian): Docker с Compose — `curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker`.
+
+**Запуск**
+1. Создайте бота у [@BotFather](https://t.me/BotFather), добавьте в группу **админом** с правом закреплять сообщения.
+2. `cp .env.example .env` и впишите `BOT_TOKEN`.
+3. Запуск:
+   ```bash
+   make run                       # локально
+   docker compose up -d --build   # на сервере: автоперезапуск, база на томе challenger-data
+   ```
+4. В теме группы админ пишет `/start_challenge`, участники выкладывают пруфы с `#task`.
+
+Обновление на сервере — `git pull && docker compose up -d --build`.
+
+**Бэкап и восстановление** — при остановленном боте (`docker compose stop bot`, после — `docker compose start bot`):
+```bash
+docker run --rm -v challenger-data:/data -v "$PWD":/b busybox tar czf /b/backup.tgz -C /data .
+docker run --rm -v challenger-data:/data -v "$PWD":/b busybox sh -c \
+  'tar tzf /b/backup.tgz >/dev/null && rm -rf /data/* && tar xzf /b/backup.tgz -C /data && chown -R 65532:65532 /data'
+```
+
 # 📄 ФИНАЛЬНЫЙ СКЕЛЕТ — 3 экрана
 
 ## Навигация (bottom nav, 3 вкладки)
@@ -134,7 +159,7 @@ Deploy:    один Go-бинарь + файл SQLite (Railway/VPS)
 ---
 
 ### 🟠 Фундамент
-- [ ] Репозиторий, структура папок, `docker-compose` с Postgres
+- [x] Репозиторий, структура папок, `docker-compose` (SQLite вместо Postgres — ADR [0002](docs/decisions/0002-sqlite.md))
 - [x] SQL-схема + миграции: `challenges / proofs / reactions`
 - [x] sqlc-генерация, базовый слой БД
 - [ ] Скелет: бот (telego) + API (chi) в одном бинаре
