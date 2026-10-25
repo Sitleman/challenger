@@ -13,3 +13,7 @@ spike/message-reaction/message-reaction
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
+*.db.before-restore-*
+*.db.restoring*
+.backup-*/

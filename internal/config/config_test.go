@@ -86,6 +86,14 @@ func TestLoadParsesAllowedChatIDs(t *testing.T) {
 	}
 }
 
+func TestDBPathDefault(t *testing.T) {
+	t.Setenv("DB_PATH", "")
+
+	if got := DBPath(); got != "challenger.db" {
+		t.Fatalf("DBPath() = %q, want %q", got, "challenger.db")
+	}
+}
+
 func TestLoadErrorsOnBadAllowedChatIDs(t *testing.T) {
 	for _, value := range []string{"", " , ", "-100,abc"} {
 		setRequired(t)

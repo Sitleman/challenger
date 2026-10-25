@@ -2,20 +2,20 @@ package bot
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"time"
 
 	"github.com/Sitleman/challenger/internal/config"
-	"github.com/Sitleman/challenger/internal/db"
 	"github.com/mymmrac/telego"
 	"github.com/valyala/fasthttp"
 )
 
 const statsRefreshDelay = 3 * time.Second
 
-func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
+func Run(ctx context.Context, cfg config.Config, conn *sql.DB) error {
 	startedAt := time.Now()
 	b, err := newBot(cfg.BotToken)
 	if err != nil {
@@ -30,8 +30,9 @@ func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
 
 	workCtx, stopWork := context.WithCancel(ctx)
 	defer stopWork()
-	h := newHandler(workCtx, b, me.Username, q, cfg)
+	h := newHandler(workCtx, b, me.Username, conn, cfg)
 	go h.refreshAtMidnight(workCtx)
+	h.backups.start(workCtx)
 
 	updates := make(chan telego.Update)
 	polled := make(chan error, 1)
@@ -46,6 +47,7 @@ func Run(ctx context.Context, cfg config.Config, q *db.Queries) error {
 	consume(workCtx, h, updates)
 	stopWork()
 	h.stats.wait()
+	h.backups.wait()
 
 	var dup *duplicateInstanceError
 	if errors.As(<-polled, &dup) {

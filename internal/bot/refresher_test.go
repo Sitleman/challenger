@@ -77,11 +77,11 @@ func waitCalls(t *testing.T, done <-chan int64, n int) {
 	}
 }
 
-func TestUntilNextDay(t *testing.T) {
+func TestUntilNextMidnight(t *testing.T) {
 	loc := time.FixedZone("MSK", 3*60*60)
 	now := time.Date(2026, time.October, 31, 23, 59, 0, 0, loc)
 
-	if got, want := untilNextDay(now), time.Minute+midnightLag; got != want {
-		t.Fatalf("untilNextDay = %v, want %v", got, want)
+	if got, want := untilNext(now, 0), time.Minute+wakeLag; got != want {
+		t.Fatalf("untilNext = %v, want %v", got, want)
 	}
 }

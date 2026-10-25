@@ -37,3 +37,32 @@ func migrate(ctx context.Context, conn *sql.DB) error {
 	}
 	return nil
 }
+
+func OpenReadOnly(path string) (*sql.DB, error) {
+	conn, err := sql.Open("sqlite", "file:"+path+"?mode=ro")
+	if err != nil {
+		return nil, fmt.Errorf("open sqlite %s: %w", path, err)
+	}
+	conn.SetMaxOpenConns(1)
+	return conn, nil
+}
+
+func Checkpoint(ctx context.Context, path string) error {
+	return execPragma(ctx, path, "PRAGMA wal_checkpoint(TRUNCATE)")
+}
+
+func UseRollbackJournal(ctx context.Context, path string) error {
+	return execPragma(ctx, path, "PRAGMA journal_mode=DELETE")
+}
+
+func execPragma(ctx context.Context, path, pragma string) error {
+	conn, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		return fmt.Errorf("open sqlite %s: %w", path, err)
+	}
+	defer func() { _ = conn.Close() }()
+	if _, err := conn.ExecContext(ctx, pragma); err != nil {
+		return fmt.Errorf("%s on %s: %w", pragma, path, err)
+	}
+	return nil
+}
