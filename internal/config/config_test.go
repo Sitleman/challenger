@@ -96,3 +96,38 @@ func TestLoadErrorsOnBadAllowedChatIDs(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadAdminUserIDsAreOptional(t *testing.T) {
+	setRequired(t)
+	t.Setenv("ADMIN_USER_IDS", "")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.AdminUserIDs) != 0 {
+		t.Fatalf("AdminUserIDs = %v, want empty", cfg.AdminUserIDs)
+	}
+}
+
+func TestLoadParsesAdminUserIDs(t *testing.T) {
+	setRequired(t)
+	t.Setenv("ADMIN_USER_IDS", " 123, 456 ,")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []int64{123, 456}; !reflect.DeepEqual(cfg.AdminUserIDs, want) {
+		t.Fatalf("AdminUserIDs = %v, want %v", cfg.AdminUserIDs, want)
+	}
+}
+
+func TestLoadErrorsOnBadAdminUserIDs(t *testing.T) {
+	setRequired(t)
+	t.Setenv("ADMIN_USER_IDS", "123,abc")
+
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error for bad ADMIN_USER_IDS, got nil")
+	}
+}
