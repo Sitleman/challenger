@@ -43,7 +43,7 @@ func Load() (Config, error) {
 		BotToken:       token,
 		AllowedChatIDs: chatIDs,
 		AdminUserIDs:   adminIDs,
-		DBPath:         envOr("DB_PATH", "challenger.db"),
+		DBPath:         DBPath(),
 		Location:       loc,
 	}, nil
 }
@@ -62,6 +62,10 @@ func parseIDs(key string) ([]int64, error) {
 		ids = append(ids, id)
 	}
 	return ids, nil
+}
+
+func DBPath() string {
+	return envOr("DB_PATH", "challenger.db")
 }
 
 func envOr(key, fallback string) string {

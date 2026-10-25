@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	midnightLag      = 5 * time.Second
+	wakeLag          = 5 * time.Second
 	renderAttempts   = 3
 	renderRetryDelay = 5 * time.Second
 )
@@ -28,7 +28,7 @@ func (h *handler) refreshAtMidnight(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(untilNextDay(time.Now().In(h.loc))):
+		case <-time.After(untilNext(time.Now().In(h.loc), 0)):
 		}
 		h.refreshMonth(ctx, time.Now().In(h.loc).Add(-time.Hour))
 	}
@@ -47,9 +47,12 @@ func (h *handler) refreshMonth(ctx context.Context, day time.Time) {
 	}
 }
 
-func untilNextDay(now time.Time) time.Duration {
-	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
-	return next.Sub(now) + midnightLag
+func untilNext(now time.Time, hour int) time.Duration {
+	next := time.Date(now.Year(), now.Month(), now.Day(), hour, 0, 0, 0, now.Location())
+	if !next.After(now) {
+		next = time.Date(now.Year(), now.Month(), now.Day()+1, hour, 0, 0, 0, now.Location())
+	}
+	return next.Sub(now) + wakeLag
 }
 
 func retry(ctx context.Context, attempts int, delay time.Duration, fn func() error) error {

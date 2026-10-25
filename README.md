@@ -21,12 +21,15 @@ Challenger — Telegram mini app для командных челленджей 
 
 **Двойной запуск.** Если с тем же `BOT_TOKEN` запущен второй экземпляр, здесь или на другом сервере, один из них перестаёт обрабатывать сообщения и пишет в личку каждому из `ADMIN_USER_IDS`, с какого хоста он запущен. Чтобы бот мог написать админу, тот должен один раз отправить боту `/start`. Остановите лишний экземпляр. Если работать остался не тот, перезапустите нужный: уснувший экземпляр сам не просыпается.
 
-**Бэкап и восстановление** — при остановленном боте (`docker compose stop bot`, после — `docker compose start bot`):
+**Бэкап.** Каждый день в 04:00 по `CHALLENGE_TZ` бот присылает в личку каждому из `ADMIN_USER_IDS` файл `challenger-YYYYMMDD-HHMM.db`, а по `/make_backup` в личке — сразу. Пустой `ADMIN_USER_IDS` — бэкапы выключены.
+
+**Восстановление** — скачайте файл из Telegram на сервер и при остановленном боте:
 ```bash
-docker run --rm -v challenger-data:/data -v "$PWD":/b busybox tar czf /b/backup.tgz -C /data .
-docker run --rm -v challenger-data:/data -v "$PWD":/b busybox sh -c \
-  'tar tzf /b/backup.tgz >/dev/null && rm -rf /data/* && tar xzf /b/backup.tgz -C /data && chown -R 65532:65532 /data'
+docker compose stop bot
+docker compose run --rm -v "$PWD":/restore:ro bot restore /restore/challenger-20261025-0400.db
+docker compose start bot
 ```
+Текущая база откладывается в `/data/challenger.db.before-restore-<время>`. Откат — та же команда с этим файлом вместо бэкапа. Локально — `DB_PATH=challenger.db go run ./cmd/challenger restore <файл>`.
 
 # 📄 ФИНАЛЬНЫЙ СКЕЛЕТ — 3 экрана
 

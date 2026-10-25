@@ -27,16 +27,18 @@ type handler struct {
 	allowed  map[int64]bool
 	admins   map[int64]bool
 	stats    *refresher
+	backups  *backuper
 }
 
-func newHandler(ctx context.Context, b *telego.Bot, username string, q *db.Queries, cfg config.Config) *handler {
+func newHandler(ctx context.Context, b *telego.Bot, username string, conn *sql.DB, cfg config.Config) *handler {
 	h := &handler{
 		bot:      b,
 		username: username,
-		q:        q,
+		q:        db.New(conn),
 		loc:      cfg.Location,
 		allowed:  idSet(cfg.AllowedChatIDs),
 		admins:   idSet(cfg.AdminUserIDs),
+		backups:  newBackuper(b, conn, cfg),
 	}
 	h.stats = newRefresher(statsRefreshDelay, func(challengeID int64) {
 		err := retry(ctx, renderAttempts, renderRetryDelay, func() error {
@@ -59,6 +61,8 @@ func idSet(ids []int64) map[int64]bool {
 
 func (h *handler) handle(ctx context.Context, update telego.Update) {
 	switch {
+	case update.Message != nil && isBackupRequest(update.Message, h.username, h.admins):
+		h.backups.request(ctx, update.Message.From.ID)
 	case update.Message != nil && h.isAllowed(update.Message.Chat.ID):
 		h.handleMessage(ctx, update.Message)
 	case update.MessageReaction != nil && h.isAllowed(update.MessageReaction.Chat.ID):
