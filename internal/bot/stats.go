@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"strings"
@@ -10,9 +11,14 @@ import (
 	"github.com/Sitleman/challenger/internal/challenge"
 	"github.com/Sitleman/challenger/internal/db"
 	"github.com/mymmrac/telego"
+	ta "github.com/mymmrac/telego/telegoapi"
 )
 
-const midnightLag = 5 * time.Second
+const (
+	midnightLag      = 5 * time.Second
+	renderAttempts   = 3
+	renderRetryDelay = 5 * time.Second
+)
 
 func (h *handler) refreshAtMidnight(ctx context.Context) {
 	now := time.Now().In(h.loc)
@@ -35,13 +41,38 @@ func (h *handler) refreshMonth(ctx context.Context, day time.Time) {
 		return
 	}
 	for _, c := range challenges {
-		h.stats.schedule(c.ID)
+		if h.allowed[c.ChatID] {
+			h.stats.schedule(c.ID)
+		}
 	}
 }
 
 func untilNextDay(now time.Time) time.Duration {
 	next := time.Date(now.Year(), now.Month(), now.Day()+1, 0, 0, 0, 0, now.Location())
 	return next.Sub(now) + midnightLag
+}
+
+func retry(ctx context.Context, attempts int, delay time.Duration, fn func() error) error {
+	var err error
+	for i := 0; i < attempts; i++ {
+		if err = fn(); err == nil {
+			return nil
+		}
+		if i == attempts-1 || ctx.Err() != nil || !isTransient(err) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(delay):
+		}
+	}
+	return err
+}
+
+func isTransient(err error) bool {
+	var apiErr *ta.Error
+	return !errors.As(err, &apiErr)
 }
 
 func (h *handler) renderStats(ctx context.Context, challengeID int64) error {
@@ -62,7 +93,7 @@ func (h *handler) renderStats(ctx context.Context, challengeID int64) error {
 	_, err = h.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
 		ChatID:    telego.ChatID{ID: c.ChatID},
 		MessageID: int(c.StatsMessageID),
-		Text:      challenge.NewBoard(month, toProofs(rows), now).Render(now),
+		Text:      challenge.NewBoard(month, int(c.StartDay), toProofs(rows), now).Render(now),
 		ParseMode: telego.ModeHTML,
 	})
 	if err != nil && !strings.Contains(err.Error(), "message is not modified") {

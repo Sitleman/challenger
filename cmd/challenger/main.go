@@ -32,5 +32,5 @@ func run() error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	return bot.Run(ctx, cfg.BotToken, db.New(conn), cfg.Location)
+	return bot.Run(ctx, cfg, db.New(conn))
 }

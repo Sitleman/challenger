@@ -11,8 +11,8 @@ SELECT * FROM challenges
 WHERE month = ?;
 
 -- name: CreateChallenge :one
-INSERT INTO challenges (chat_id, thread_id, month, stats_message_id)
-VALUES (?, ?, ?, ?)
+INSERT INTO challenges (chat_id, thread_id, month, stats_message_id, start_day)
+VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: CreateProof :exec
@@ -29,6 +29,10 @@ WHERE c.chat_id = ? AND p.message_id = ?;
 INSERT INTO reactions (challenge_id, message_id, user_id)
 VALUES (?, ?, ?)
 ON CONFLICT DO NOTHING;
+
+-- name: CountReactions :one
+SELECT COUNT(*) FROM reactions
+WHERE challenge_id = ? AND message_id = ?;
 
 -- name: RemoveReaction :exec
 DELETE FROM reactions

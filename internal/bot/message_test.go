@@ -84,13 +84,23 @@ func TestDisplayName(t *testing.T) {
 		user telego.User
 		want string
 	}{
-		{telego.User{ID: 1, FirstName: "Anna", LastName: "K", Username: "anna"}, "Anna"},
-		{telego.User{ID: 1, Username: "anna"}, "anna"},
+		{telego.User{ID: 1, FirstName: "Anna", LastName: "K", Username: "anna"}, "Anna (@anna)"},
+		{telego.User{ID: 1, FirstName: "Anna"}, "Anna"},
+		{telego.User{ID: 1, Username: "anna"}, "@anna"},
 		{telego.User{ID: 42}, "42"},
 	}
 	for _, tt := range tests {
 		if got := displayName(&tt.user); got != tt.want {
 			t.Errorf("displayName(%+v) = %q, want %q", tt.user, got, tt.want)
+		}
+	}
+}
+
+func TestConfirmationReaction(t *testing.T) {
+	tests := map[int64]string{0: trackedReaction, 1: trackedReaction, 2: confirmedReaction, 5: confirmedReaction}
+	for count, want := range tests {
+		if got := confirmationReaction(count); got != want {
+			t.Errorf("confirmationReaction(%d) = %q, want %q", count, got, want)
 		}
 	}
 }

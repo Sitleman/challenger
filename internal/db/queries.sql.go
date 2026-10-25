@@ -26,10 +26,27 @@ func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) error 
 	return err
 }
 
+const countReactions = `-- name: CountReactions :one
+SELECT COUNT(*) FROM reactions
+WHERE challenge_id = ? AND message_id = ?
+`
+
+type CountReactionsParams struct {
+	ChallengeID int64
+	MessageID   int64
+}
+
+func (q *Queries) CountReactions(ctx context.Context, arg CountReactionsParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countReactions, arg.ChallengeID, arg.MessageID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createChallenge = `-- name: CreateChallenge :one
-INSERT INTO challenges (chat_id, thread_id, month, stats_message_id)
-VALUES (?, ?, ?, ?)
-RETURNING id, chat_id, thread_id, month, stats_message_id
+INSERT INTO challenges (chat_id, thread_id, month, stats_message_id, start_day)
+VALUES (?, ?, ?, ?, ?)
+RETURNING id, chat_id, thread_id, month, stats_message_id, start_day
 `
 
 type CreateChallengeParams struct {
@@ -37,6 +54,7 @@ type CreateChallengeParams struct {
 	ThreadID       int64
 	Month          string
 	StatsMessageID int64
+	StartDay       int64
 }
 
 func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams) (Challenge, error) {
@@ -45,6 +63,7 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		arg.ThreadID,
 		arg.Month,
 		arg.StatsMessageID,
+		arg.StartDay,
 	)
 	var i Challenge
 	err := row.Scan(
@@ -53,6 +72,7 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		&i.ThreadID,
 		&i.Month,
 		&i.StatsMessageID,
+		&i.StartDay,
 	)
 	return i, err
 }
@@ -107,7 +127,7 @@ func (q *Queries) FindProof(ctx context.Context, arg FindProofParams) (Proof, er
 }
 
 const getChallenge = `-- name: GetChallenge :one
-SELECT id, chat_id, thread_id, month, stats_message_id FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
 WHERE id = ?
 `
 
@@ -120,12 +140,13 @@ func (q *Queries) GetChallenge(ctx context.Context, id int64) (Challenge, error)
 		&i.ThreadID,
 		&i.Month,
 		&i.StatsMessageID,
+		&i.StartDay,
 	)
 	return i, err
 }
 
 const getChallengeByTopic = `-- name: GetChallengeByTopic :one
-SELECT id, chat_id, thread_id, month, stats_message_id FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
 WHERE chat_id = ? AND thread_id = ? AND month = ?
 `
 
@@ -144,12 +165,13 @@ func (q *Queries) GetChallengeByTopic(ctx context.Context, arg GetChallengeByTop
 		&i.ThreadID,
 		&i.Month,
 		&i.StatsMessageID,
+		&i.StartDay,
 	)
 	return i, err
 }
 
 const listChallengesByMonth = `-- name: ListChallengesByMonth :many
-SELECT id, chat_id, thread_id, month, stats_message_id FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
 WHERE month = ?
 `
 
@@ -168,6 +190,7 @@ func (q *Queries) ListChallengesByMonth(ctx context.Context, month string) ([]Ch
 			&i.ThreadID,
 			&i.Month,
 			&i.StatsMessageID,
+			&i.StartDay,
 		); err != nil {
 			return nil, err
 		}

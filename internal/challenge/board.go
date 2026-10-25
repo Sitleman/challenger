@@ -31,6 +31,7 @@ type Proof struct {
 type Board struct {
 	Month        time.Time
 	DaysInMonth  int
+	StartDay     int
 	Shown        int
 	Today        int
 	Participants []Participant
@@ -45,11 +46,11 @@ type Participant struct {
 	Streak   int
 }
 
-func NewBoard(month time.Time, proofs []Proof, now time.Time) Board {
-	b := Board{Month: month, DaysInMonth: daysIn(month)}
+func NewBoard(month time.Time, startDay int, proofs []Proof, now time.Time) Board {
+	b := Board{Month: month, DaysInMonth: daysIn(month), StartDay: max(startDay, 1)}
 	b.Shown, b.Today = progress(month, b.DaysInMonth, now)
-	for i, pp := range collectProofs(proofs) {
-		b.Participants = append(b.Participants, newParticipant(i, pp, b.Shown, b.Today))
+	for i, up := range collectProofs(proofs, b.StartDay) {
+		b.Participants = append(b.Participants, newParticipant(i, up, b.StartDay, b.Shown, b.Today))
 	}
 	return b
 }
@@ -75,10 +76,13 @@ type userProofs struct {
 	reactors map[int]int
 }
 
-func collectProofs(proofs []Proof) []*userProofs {
+func collectProofs(proofs []Proof, startDay int) []*userProofs {
 	var ordered []*userProofs
 	byUser := map[int64]*userProofs{}
 	for _, p := range proofs {
+		if p.Day < startDay {
+			continue
+		}
 		up, ok := byUser[p.UserID]
 		if !ok {
 			up = &userProofs{reactors: map[int]int{}}
@@ -93,15 +97,15 @@ func collectProofs(proofs []Proof) []*userProofs {
 	return ordered
 }
 
-func newParticipant(index int, up *userProofs, shown, today int) Participant {
+func newParticipant(index int, up *userProofs, startDay, shown, today int) Participant {
 	p := Participant{
 		Name:     up.name,
 		Avatar:   avatars[index%len(avatars)],
-		Statuses: make([]Status, shown),
+		Statuses: make([]Status, max(shown-startDay+1, 0)),
 	}
-	for day := 1; day <= shown; day++ {
+	for day := startDay; day <= shown; day++ {
 		s := dayStatus(up.reactors, day, today)
-		p.Statuses[day-1] = s
+		p.Statuses[day-startDay] = s
 		if isClosed(day, s, today) {
 			p.Closed++
 			if s == StatusDone {
@@ -109,7 +113,7 @@ func newParticipant(index int, up *userProofs, shown, today int) Participant {
 			}
 		}
 	}
-	p.Streak = streak(p.Statuses, today)
+	p.Streak = streak(p.Statuses, startDay, today)
 	return p
 }
 
@@ -131,11 +135,11 @@ func isClosed(day int, s Status, today int) bool {
 	return day != today || s == StatusDone
 }
 
-func streak(statuses []Status, today int) int {
+func streak(statuses []Status, startDay, today int) int {
 	n := 0
-	for day := len(statuses); day >= 1; day-- {
-		s := statuses[day-1]
-		if !isClosed(day, s, today) {
+	for i := len(statuses) - 1; i >= 0; i-- {
+		s := statuses[i]
+		if !isClosed(startDay+i, s, today) {
 			continue
 		}
 		if s != StatusDone {
