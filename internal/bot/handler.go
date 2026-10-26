@@ -105,8 +105,8 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 	}
 
 	now := time.Now()
-	sentAt := time.Unix(msg.Date, 0).In(h.loc)
-	month := monthStart(sentAt, h.loc)
+	day := challenge.DayOf(time.Unix(msg.Date, 0), h.loc)
+	month := monthStart(day, h.loc)
 	_, err = h.q.GetChallengeByTopic(ctx, db.GetChallengeByTopicParams{
 		ChatID: t.chatID, ThreadID: t.threadID, Month: monthKey(month),
 	})
@@ -122,7 +122,7 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 	stats, err := h.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID:          telego.ChatID{ID: t.chatID},
 		MessageThreadID: int(t.threadID),
-		Text:            challenge.NewBoard(month, sentAt.Day(), nil, now).Render(now),
+		Text:            challenge.NewBoard(month, day.Day(), nil, now).Render(now),
 		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
@@ -134,7 +134,7 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 		ThreadID:       t.threadID,
 		Month:          monthKey(month),
 		StatsMessageID: int64(stats.MessageID),
-		StartDay:       int64(sentAt.Day()),
+		StartDay:       int64(day.Day()),
 	})
 	if err != nil {
 		log.Printf("create challenge: %v", err)
@@ -194,9 +194,9 @@ func (h *handler) handleEditedMessage(ctx context.Context, msg *telego.Message) 
 
 func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 	t := topicOf(msg)
-	sentAt := time.Unix(msg.Date, 0).In(h.loc)
+	day := challenge.DayOf(time.Unix(msg.Date, 0), h.loc)
 	c, err := h.q.GetChallengeByTopic(ctx, db.GetChallengeByTopicParams{
-		ChatID: t.chatID, ThreadID: t.threadID, Month: monthKey(sentAt),
+		ChatID: t.chatID, ThreadID: t.threadID, Month: monthKey(day),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return
@@ -205,7 +205,7 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		log.Printf("get challenge: %v", err)
 		return
 	}
-	if int64(sentAt.Day()) < c.StartDay {
+	if int64(day.Day()) < c.StartDay {
 		return
 	}
 	err = h.q.CreateProof(ctx, db.CreateProofParams{
@@ -213,7 +213,7 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		MessageID:   int64(msg.MessageID),
 		UserID:      msg.From.ID,
 		UserName:    displayName(msg.From),
-		Day:         int64(sentAt.Day()),
+		Day:         int64(day.Day()),
 	})
 	if err != nil {
 		log.Printf("create proof: %v", err)

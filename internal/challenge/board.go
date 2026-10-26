@@ -3,8 +3,9 @@ package challenge
 import "time"
 
 const (
-	Hashtag     = "#task"
-	MinReactors = 2
+	Hashtag      = "#task"
+	MinReactors  = 2
+	DayStartHour = 3
 )
 
 type Status int
@@ -60,7 +61,7 @@ func daysIn(month time.Time) int {
 }
 
 func progress(month time.Time, days int, now time.Time) (shown, today int) {
-	now = now.In(month.Location())
+	now = DayOf(now, month.Location())
 	switch {
 	case now.Year() == month.Year() && now.Month() == month.Month():
 		return now.Day(), now.Day()
@@ -69,6 +70,15 @@ func progress(month time.Time, days int, now time.Time) (shown, today int) {
 	default:
 		return 0, 0
 	}
+}
+
+func DayOf(t time.Time, loc *time.Location) time.Time {
+	t = t.In(loc)
+	day := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, loc)
+	if t.Hour() < DayStartHour {
+		return day.AddDate(0, 0, -1)
+	}
+	return day
 }
 
 type userProofs struct {

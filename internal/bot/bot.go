@@ -31,7 +31,7 @@ func Run(ctx context.Context, cfg config.Config, conn *sql.DB) error {
 	workCtx, stopWork := context.WithCancel(ctx)
 	defer stopWork()
 	h := newHandler(workCtx, b, me.Username, conn, cfg)
-	go h.refreshAtMidnight(workCtx)
+	go h.refreshAtDayStart(workCtx)
 	h.backups.start(workCtx)
 
 	updates := make(chan telego.Update)

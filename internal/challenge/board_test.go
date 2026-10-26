@@ -165,3 +165,71 @@ func TestNewBoardCountsFromStartDay(t *testing.T) {
 		t.Fatalf("score = %d/%d streak %d, want 1/1 streak 1", p.Score, p.Closed, p.Streak)
 	}
 }
+
+func TestDayOf(t *testing.T) {
+	msk := time.FixedZone("MSK", 3*60*60)
+	tests := []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{name: "before day start", at: time.Date(2026, time.October, 25, 2, 59, 0, 0, msk), want: "2026-10-24"},
+		{name: "at day start", at: time.Date(2026, time.October, 25, 3, 0, 0, 0, msk), want: "2026-10-25"},
+		{name: "evening", at: time.Date(2026, time.October, 25, 23, 59, 0, 0, msk), want: "2026-10-25"},
+		{name: "night of new month", at: time.Date(2026, time.November, 1, 1, 0, 0, 0, msk), want: "2026-10-31"},
+		{name: "converts to location", at: time.Date(2026, time.October, 25, 0, 30, 0, 0, time.UTC), want: "2026-10-25"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DayOf(tt.at, msk).Format(time.DateOnly); got != tt.want {
+				t.Fatalf("DayOf = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestDayOfFollowsWallClockAcrossDST(t *testing.T) {
+	berlin, err := time.LoadLocation("Europe/Berlin")
+	if err != nil {
+		t.Skipf("no tzdata: %v", err)
+	}
+	tests := []struct {
+		name string
+		at   time.Time
+		want string
+	}{
+		{name: "spring forward after day start", at: time.Date(2026, time.March, 29, 1, 30, 0, 0, time.UTC), want: "2026-03-29"},
+		{name: "fall back before day start", at: time.Date(2026, time.October, 25, 1, 30, 0, 0, time.UTC), want: "2026-10-24"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := DayOf(tt.at, berlin).Format(time.DateOnly); got != tt.want {
+				t.Fatalf("DayOf = %s, want %s", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestNewBoardTodayStartsAtDayStartHour(t *testing.T) {
+	msk := time.FixedZone("MSK", 3*60*60)
+	month := time.Date(2026, time.October, 1, 0, 0, 0, 0, msk)
+	tests := []struct {
+		name      string
+		now       time.Time
+		wantShown int
+		wantToday int
+	}{
+		{name: "night before day start", now: time.Date(2026, time.October, 25, 2, 59, 0, 0, msk), wantShown: 24, wantToday: 24},
+		{name: "at day start", now: time.Date(2026, time.October, 25, 3, 0, 0, 0, msk), wantShown: 25, wantToday: 25},
+		{name: "night of next month", now: time.Date(2026, time.November, 1, 1, 0, 0, 0, msk), wantShown: 31, wantToday: 31},
+		{name: "next month after day start", now: time.Date(2026, time.November, 1, 3, 0, 0, 0, msk), wantShown: 31, wantToday: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			b := NewBoard(month, 1, nil, tt.now)
+			if b.Shown != tt.wantShown || b.Today != tt.wantToday {
+				t.Fatalf("shown/today = %d/%d, want %d/%d", b.Shown, b.Today, tt.wantShown, tt.wantToday)
+			}
+		})
+	}
+}

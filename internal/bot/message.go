@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode/utf16"
 
+	"github.com/Sitleman/challenger/internal/challenge"
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
 )
@@ -58,8 +59,8 @@ func editedSameDay(msg *telego.Message, loc *time.Location) bool {
 	if msg.EditDate == 0 {
 		return false
 	}
-	sent := time.Unix(msg.Date, 0).In(loc)
-	edited := time.Unix(msg.EditDate, 0).In(loc)
+	sent := challenge.DayOf(time.Unix(msg.Date, 0), loc)
+	edited := challenge.DayOf(time.Unix(msg.EditDate, 0), loc)
 	return sent.Format(time.DateOnly) == edited.Format(time.DateOnly)
 }
 
