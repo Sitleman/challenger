@@ -20,17 +20,17 @@ const (
 	renderRetryDelay = 5 * time.Second
 )
 
-func (h *handler) refreshAtMidnight(ctx context.Context) {
-	now := time.Now().In(h.loc)
-	h.refreshMonth(ctx, now)
-	h.refreshMonth(ctx, monthStart(now, h.loc).Add(-time.Hour))
+func (h *handler) refreshAtDayStart(ctx context.Context) {
+	today := challenge.DayOf(time.Now(), h.loc)
+	h.refreshMonth(ctx, today)
+	h.refreshMonth(ctx, monthStart(today, h.loc).Add(-time.Hour))
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(untilNext(time.Now().In(h.loc), 0)):
+		case <-time.After(untilNext(time.Now().In(h.loc), challenge.DayStartHour)):
 		}
-		h.refreshMonth(ctx, time.Now().In(h.loc).Add(-time.Hour))
+		h.refreshMonth(ctx, challenge.DayOf(time.Now(), h.loc).AddDate(0, 0, -1))
 	}
 }
 

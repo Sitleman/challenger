@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/Sitleman/challenger/internal/challenge"
 )
 
 func TestRefresherCoalescesBurst(t *testing.T) {
@@ -77,11 +79,11 @@ func waitCalls(t *testing.T, done <-chan int64, n int) {
 	}
 }
 
-func TestUntilNextMidnight(t *testing.T) {
+func TestUntilNextDayStart(t *testing.T) {
 	loc := time.FixedZone("MSK", 3*60*60)
-	now := time.Date(2026, time.October, 31, 23, 59, 0, 0, loc)
+	now := time.Date(2026, time.November, 1, 2, 59, 0, 0, loc)
 
-	if got, want := untilNext(now, 0), time.Minute+wakeLag; got != want {
+	if got, want := untilNext(now, challenge.DayStartHour), time.Minute+wakeLag; got != want {
 		t.Fatalf("untilNext = %v, want %v", got, want)
 	}
 }
