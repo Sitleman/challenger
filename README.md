@@ -5,7 +5,7 @@ Challenger — Telegram mini app для командных челленджей 
 
 **Зависимости**
 - Локально: Go 1.26+ — `brew install go`.
-- Сервер (Ubuntu/Debian): Docker с Compose — `curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker`.
+- Сервер (Ubuntu/Debian, Raspberry Pi — см. [Подготовка Raspberry Pi](#-подготовка-raspberry-pi)): Docker с Compose — `curl -fsSL https://get.docker.com | sudo sh && sudo systemctl enable --now docker`.
 
 **Запуск**
 1. Создайте бота у [@BotFather](https://t.me/BotFather), добавьте в группу **админом** с правом закреплять сообщения.
@@ -30,6 +30,51 @@ docker compose run --rm -v "$PWD":/restore:ro bot restore /restore/challenger-20
 docker compose start bot
 ```
 Текущая база откладывается в `/data/challenger.db.before-restore-<время>`. Откат — та же команда с этим файлом вместо бэкапа. Локально — `DB_PATH=challenger.db go run ./cmd/challenger restore <файл>`.
+
+# 🍓 Подготовка Raspberry Pi
+
+Как поставить ОС на Raspberry Pi 3B+ за NAT и ходить на неё по SSH откуда угодно через [Tailscale](https://tailscale.com). Порты на роутере открывать не нужно, белый IP тоже.
+
+Понадобятся microSD от 16 ГБ, картридер, блок питания 5V/2.5A и Ethernet-кабель или Wi-Fi.
+
+**1. Образ ОС** — на Mac:
+1. `brew install --cask raspberry-pi-imager` и запустите Raspberry Pi Imager.
+2. Устройство — **Raspberry Pi 3**. ОС — **Raspberry Pi OS (other) → Raspberry Pi OS Lite (64-bit)**: без рабочего стола, для сервера с 1 ГБ RAM он лишний. Носитель — microSD.
+3. На шаге настроек (Customisation / «Edit settings»):
+   - hostname — `challenger-pi`;
+   - пользователь — `pi` и пароль;
+   - Wi-Fi — сеть и пароль, страна `RU`. Если Pi будет на кабеле, пропустите;
+   - часовой пояс — `Europe/Moscow`;
+   - SSH — включить, **только по публичному ключу**, вставить `~/.ssh/id_ed25519.pub`. Ключа нет — `ssh-keygen -t ed25519`.
+4. Запишите образ, вставьте карту в Pi и включите питание. Первая загрузка занимает 2–3 минуты.
+
+**2. Первый вход** — из той же локальной сети:
+```bash
+ssh pi@challenger-pi.local
+sudo apt update && sudo apt full-upgrade -y && sudo reboot
+```
+Если `.local` не резолвится, найдите IP Pi в списке клиентов роутера и подключитесь по нему.
+
+**3. Tailscale на Pi:**
+```bash
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh
+```
+Откройте ссылку из вывода и войдите в Tailscale (через Google, GitHub или Apple). `--ssh` включает Tailscale SSH: вход проверяется по аккаунту Tailscale, без ключей. Обычный `sshd` с ключом продолжает работать.
+
+В [админке Tailscale](https://login.tailscale.com/admin/machines) у `challenger-pi` выберите **⋯ → Disable key expiry**. Иначе через 180 дней ключ устройства истечёт и Pi пропадёт из сети, пока к ней не подойдёшь руками.
+
+**4. Tailscale на Mac:**
+```bash
+brew install --cask tailscale
+```
+Запустите приложение и войдите тем же аккаунтом. Теперь из любой сети:
+```bash
+ssh pi@challenger-pi
+```
+Не находит по имени — возьмите адрес `100.x.y.z` из `tailscale status` или из админки. С телефона: приложение Tailscale и любой SSH-клиент, например Termius.
+
+**5. Дальше** — Docker и запуск бота по [Get started](#-get-started), шаги для сервера.
 
 # 📄 ФИНАЛЬНЫЙ СКЕЛЕТ — 3 экрана
 
