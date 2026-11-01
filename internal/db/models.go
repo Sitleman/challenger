@@ -4,17 +4,19 @@
 
 package db
 
+import (
+	"database/sql"
+)
+
 type Challenge struct {
-	ID               int64
-	ChatID           int64
-	ThreadID         int64
-	Month            string
-	StatsMessageID   int64
-	StartDay         int64
-	StoppedAt        int64
-	SummaryMessageID int64
-	SummaryText      string
-	SummaryPartsSent int64
+	ID             int64
+	ChatID         int64
+	ThreadID       int64
+	Month          string
+	StatsMessageID int64
+	StartDay       int64
+	FinishDay      sql.NullInt64
+	TgApiMessageID int64
 }
 
 type Proof struct {
@@ -29,5 +31,4 @@ type Reaction struct {
 	ChallengeID int64
 	MessageID   int64
 	UserID      int64
-	UserName    string
 }

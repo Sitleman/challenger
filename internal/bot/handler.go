@@ -122,10 +122,15 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 		return
 	}
 
+	text, err := challenge.NewBoard(month, day.Day(), nil, now).Render(now)
+	if err != nil {
+		log.Printf("render stats: %v", err)
+		return
+	}
 	stats, err := h.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID:          telego.ChatID{ID: t.chatID},
 		MessageThreadID: int(t.threadID),
-		Text:            challenge.NewBoard(month, day.Day(), nil, now).Render(now),
+		Text:            text,
 		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
@@ -208,7 +213,7 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		log.Printf("get challenge: %v", err)
 		return
 	}
-	if c.StoppedAt != 0 || int64(day.Day()) < c.StartDay {
+	if c.FinishDay.Valid || int64(day.Day()) < c.StartDay {
 		return
 	}
 	err = h.q.CreateProof(ctx, db.CreateProofParams{
@@ -244,9 +249,7 @@ func (h *handler) handleReaction(ctx context.Context, r *telego.MessageReactionU
 		return
 	}
 	if len(r.NewReaction) > 0 {
-		err = h.q.AddReaction(ctx, db.AddReactionParams{
-			ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID, UserName: displayName(r.User),
-		})
+		err = h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID})
 	} else {
 		err = h.q.RemoveReaction(ctx, db.RemoveReactionParams{ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID})
 	}

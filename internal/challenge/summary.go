@@ -2,10 +2,11 @@ package challenge
 
 import (
 	"fmt"
-	"html"
 	"slices"
 	"strings"
 )
+
+const summaryMaxLength = 1024
 
 type Supporter struct {
 	UserID     int64
@@ -14,55 +15,77 @@ type Supporter struct {
 }
 
 type Summary struct {
-	Board      Board
-	Proofs     []Proof
-	Supporters []Supporter
-	ChatID     int64
+	Board          Board
+	Proofs         []Proof
+	Supporters     []Supporter
+	ChatID         int64
+	StatsMessageID int64
 }
 
-func (s Summary) Render() string {
-	b := s.Board
-	start := b.Month.AddDate(0, 0, b.StartDay-1)
-	end := b.Month.AddDate(0, 0, b.Shown-1)
-	lines := []string{
-		"🏁 <b>Челлендж завершён!</b>",
-		fmt.Sprintf("%s–%s · %s · %s", start.Format("02.01"), end.Format("02.01.2006"),
-			counted(max(b.Shown-b.StartDay+1, 0), "день", "дня", "дней"),
-			counted(len(b.Participants), "участник", "участника", "участников")),
-	}
-	if len(b.Participants) == 0 {
-		return strings.Join(append(lines, "", "Никто не отправил "+Hashtag), "\n")
-	}
-	lines = append(lines, "", "<b>Результаты</b>")
-	lines = append(lines, s.ranking()...)
-	total := 0
-	for _, p := range b.Participants {
-		total += p.Score
-	}
-	lines = append(lines, "", "Вместе закрыли <b>"+counted(total, "день", "дня", "дней")+"</b> 💪")
-	pending := 0
-	for _, p := range s.Proofs {
-		if p.Day >= b.StartDay && p.Day <= b.Shown && p.Reactors < MinReactors {
-			pending++
+type rankedParticipant struct {
+	Name   string
+	Prefix string
+	Score  int
+}
+
+type popularProof struct {
+	Name     string
+	Reactors int
+	URL      string
+}
+
+type summaryView struct {
+	Start            string
+	End              string
+	Days             int
+	ParticipantCount int
+	Total            int
+	Pending          int
+	Ranking          []rankedParticipant
+	Series           []string
+	Streak           int
+	Popular          []popularProof
+	Supporters       []Supporter
+	StatsURL         string
+	NameLimit        int
+	RankingOmitted   int
+	SeriesOmitted    int
+	PopularOmitted   int
+	SupportOmitted   int
+	Compact          bool
+}
+
+func (s Summary) Render() (string, error) {
+	view := s.view()
+	for {
+		text, err := renderMessage("summary.html.tmpl", view)
+		if err != nil {
+			return "", err
+		}
+		if messageLength(text) <= summaryMaxLength {
+			return text, nil
+		}
+		limit := max(len(view.Ranking), len(view.Series), len(view.Popular), len(view.Supporters))
+		if limit > 1 {
+			view.limit(max(limit/2, 1))
+		} else if view.NameLimit > 16 {
+			view.NameLimit = 16
+		} else {
+			return "", fmt.Errorf("summary exceeds %d characters", summaryMaxLength)
 		}
 	}
-	if pending > 0 {
-		lines = append(lines, "🟡 Без подтверждения: "+counted(pending, "пруф", "пруфа", "пруфов"))
-	}
-	lines = append(lines, "", "🔥 <b>Самая длинная серия</b>")
-	lines = append(lines, s.longestSeries()...)
-	lines = append(lines, "", "❤️ <b>Самый популярный пруф</b>")
-	lines = append(lines, s.popularProofs()...)
-	lines = append(lines, "", "🤝 <b>Главная поддержка</b>")
-	lines = append(lines, s.mainSupport()...)
-	lines = append(lines, "", "Спасибо всем, кто участвовал и поддерживал других!")
-	return strings.Join(lines, "\n")
 }
 
-func (s Summary) ranking() []string {
-	participants := slices.Clone(s.Board.Participants)
+func (s Summary) view() summaryView {
+	b := s.Board
+	view := summaryView{
+		Start: b.Month.AddDate(0, 0, b.StartDay-1).Format("02.01"),
+		End:   b.Month.AddDate(0, 0, b.Shown-1).Format("02.01.2006"),
+		Days:  max(b.Shown-b.StartDay+1, 0), ParticipantCount: len(b.Participants),
+		NameLimit: 256, StatsURL: MessageURL(s.ChatID, s.StatsMessageID),
+	}
+	participants := slices.Clone(b.Participants)
 	slices.SortStableFunc(participants, func(a, b Participant) int { return b.Score - a.Score })
-	lines := make([]string, 0, len(participants))
 	rank := 1
 	for i, p := range participants {
 		if i > 0 && p.Score != participants[i-1].Score {
@@ -72,15 +95,8 @@ func (s Summary) ranking() []string {
 		if p.Score > 0 && rank <= 3 {
 			prefix = []string{"🥇", "🥈", "🥉"}[rank-1]
 		}
-		lines = append(lines, fmt.Sprintf("%s %s — %d/%d", prefix, summaryName(p.Name), p.Score, s.Board.Shown-s.Board.StartDay+1))
-	}
-	return lines
-}
-
-func (s Summary) longestSeries() []string {
-	best := 0
-	var lines []string
-	for _, p := range s.Board.Participants {
+		view.Ranking = append(view.Ranking, rankedParticipant{Name: p.Name, Prefix: prefix, Score: p.Score})
+		view.Total += p.Score
 		longest, current := 0, 0
 		for _, status := range p.Statuses {
 			if status == StatusDone {
@@ -90,40 +106,53 @@ func (s Summary) longestSeries() []string {
 				current = 0
 			}
 		}
-		if longest == 0 || longest < best {
-			continue
+		if longest > view.Streak {
+			view.Streak, view.Series = longest, nil
 		}
-		if longest > best {
-			best, lines = longest, nil
+		if longest > 0 && longest == view.Streak {
+			view.Series = append(view.Series, p.Name)
 		}
-		lines = append(lines, summaryName(p.Name)+" — "+counted(longest, "день", "дня", "дней")+" подряд")
 	}
-	if len(lines) == 0 {
-		return []string{"Нет подтверждённых дней"}
-	}
-	return lines
-}
-
-func (s Summary) popularProofs() []string {
 	best := 0
-	var lines []string
 	for _, p := range s.Proofs {
-		if p.Day < s.Board.StartDay || p.Day > s.Board.Shown || p.Reactors == 0 || p.Reactors < best {
+		if p.Day < b.StartDay || p.Day > b.Shown {
 			continue
+		}
+		if p.Reactors < MinReactors {
+			view.Pending++
 		}
 		if p.Reactors > best {
-			best, lines = p.Reactors, nil
+			best, view.Popular = p.Reactors, nil
 		}
-		line := summaryName(p.UserName) + " — " + counted(p.Reactors, "реакция", "реакции", "реакций")
-		if url := MessageURL(s.ChatID, p.MessageID); url != "" {
-			line += " · <a href=\"" + url + "\">посмотреть</a>"
+		if p.Reactors > 0 && p.Reactors == best {
+			view.Popular = append(view.Popular, popularProof{Name: p.UserName, Reactors: p.Reactors, URL: MessageURL(s.ChatID, p.MessageID)})
 		}
-		lines = append(lines, line)
 	}
-	if len(lines) == 0 {
-		return []string{"На пруфах нет реакций"}
+	best = 0
+	for _, p := range s.Supporters {
+		if p.Recipients > best {
+			best, view.Supporters = p.Recipients, nil
+		}
+		if p.Recipients > 0 && p.Recipients == best {
+			if p.Name == "" {
+				p.Name = fmt.Sprintf("Участник %d", p.UserID)
+			}
+			view.Supporters = append(view.Supporters, p)
+		}
 	}
-	return lines
+	return view
+}
+
+func (v *summaryView) limit(n int) {
+	v.Compact = true
+	v.RankingOmitted += max(len(v.Ranking)-n, 0)
+	v.Ranking = v.Ranking[:min(len(v.Ranking), n)]
+	v.SeriesOmitted += max(len(v.Series)-n, 0)
+	v.Series = v.Series[:min(len(v.Series), n)]
+	v.PopularOmitted += max(len(v.Popular)-n, 0)
+	v.Popular = v.Popular[:min(len(v.Popular), n)]
+	v.SupportOmitted += max(len(v.Supporters)-n, 0)
+	v.Supporters = v.Supporters[:min(len(v.Supporters), n)]
 }
 
 func MessageURL(chatID, messageID int64) string {
@@ -132,43 +161,4 @@ func MessageURL(chatID, messageID int64) string {
 		return ""
 	}
 	return fmt.Sprintf("https://t.me/c/%s/%d", strings.TrimPrefix(chat, "-100"), messageID)
-}
-
-func (s Summary) mainSupport() []string {
-	best := 0
-	var lines []string
-	for _, p := range s.Supporters {
-		if p.Recipients == 0 || p.Recipients < best {
-			continue
-		}
-		if p.Recipients > best {
-			best, lines = p.Recipients, nil
-		}
-		name := p.Name
-		if name == "" {
-			name = "Участник"
-		}
-		lines = append(lines, fmt.Sprintf("<a href=\"tg://user?id=%d\">%s</a> — подтвердил(а) пруфы других участников: %d", p.UserID, summaryName(name), p.Recipients))
-	}
-	if len(lines) == 0 {
-		return []string{"Нет реакций на чужие пруфы"}
-	}
-	return lines
-}
-
-func summaryName(name string) string {
-	return html.EscapeString(strings.Join(strings.Fields(name), " "))
-}
-
-func counted(n int, one, few, many string) string {
-	word := many
-	if n%100 < 11 || n%100 > 14 {
-		switch n % 10 {
-		case 1:
-			word = one
-		case 2, 3, 4:
-			word = few
-		}
-	}
-	return fmt.Sprintf("%d %s", n, word)
 }

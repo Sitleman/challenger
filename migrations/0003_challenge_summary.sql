@@ -1,13 +1,7 @@
 -- +goose Up
-ALTER TABLE challenges ADD COLUMN stopped_at INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE challenges ADD COLUMN summary_message_id INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE challenges ADD COLUMN summary_text TEXT NOT NULL DEFAULT '';
-ALTER TABLE challenges ADD COLUMN summary_parts_sent INTEGER NOT NULL DEFAULT 0;
-ALTER TABLE reactions ADD COLUMN user_name TEXT NOT NULL DEFAULT '';
+ALTER TABLE challenges ADD COLUMN finish_day INTEGER;
+ALTER TABLE challenges ADD COLUMN tg_api_message_id INTEGER NOT NULL DEFAULT 0;
 
 -- +goose Down
-ALTER TABLE reactions DROP COLUMN user_name;
-ALTER TABLE challenges DROP COLUMN summary_parts_sent;
-ALTER TABLE challenges DROP COLUMN summary_text;
-ALTER TABLE challenges DROP COLUMN summary_message_id;
-ALTER TABLE challenges DROP COLUMN stopped_at;
+ALTER TABLE challenges DROP COLUMN tg_api_message_id;
+ALTER TABLE challenges DROP COLUMN finish_day;

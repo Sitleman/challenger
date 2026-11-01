@@ -7,29 +7,24 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addReaction = `-- name: AddReaction :exec
-INSERT INTO reactions (challenge_id, message_id, user_id, user_name)
-SELECT ?1, ?2, ?3, ?4
-WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND stopped_at = 0)
-ON CONFLICT (challenge_id, message_id, user_id) DO UPDATE SET user_name = excluded.user_name
+INSERT INTO reactions (challenge_id, message_id, user_id)
+SELECT ?1, ?2, ?3
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
+ON CONFLICT DO NOTHING
 `
 
 type AddReactionParams struct {
 	ChallengeID int64
 	MessageID   int64
 	UserID      int64
-	UserName    string
 }
 
 func (q *Queries) AddReaction(ctx context.Context, arg AddReactionParams) error {
-	_, err := q.db.ExecContext(ctx, addReaction,
-		arg.ChallengeID,
-		arg.MessageID,
-		arg.UserID,
-		arg.UserName,
-	)
+	_, err := q.db.ExecContext(ctx, addReaction, arg.ChallengeID, arg.MessageID, arg.UserID)
 	return err
 }
 
@@ -53,7 +48,7 @@ func (q *Queries) CountReactions(ctx context.Context, arg CountReactionsParams) 
 const createChallenge = `-- name: CreateChallenge :one
 INSERT INTO challenges (chat_id, thread_id, month, stats_message_id, start_day)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent
+RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id
 `
 
 type CreateChallengeParams struct {
@@ -80,10 +75,8 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
-		&i.StoppedAt,
-		&i.SummaryMessageID,
-		&i.SummaryText,
-		&i.SummaryPartsSent,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
@@ -91,7 +84,7 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 const createProof = `-- name: CreateProof :exec
 INSERT INTO proofs (challenge_id, message_id, user_id, user_name, day)
 SELECT ?1, ?2, ?3, ?4, ?5
-WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND stopped_at = 0)
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
 ON CONFLICT DO NOTHING
 `
 
@@ -117,7 +110,7 @@ func (q *Queries) CreateProof(ctx context.Context, arg CreateProofParams) error 
 const findProof = `-- name: FindProof :one
 SELECT p.challenge_id, p.message_id, p.user_id, p.user_name, p.day FROM proofs p
 JOIN challenges c ON c.id = p.challenge_id
-WHERE c.chat_id = ? AND p.message_id = ? AND c.stopped_at = 0
+WHERE c.chat_id = ? AND p.message_id = ? AND c.finish_day IS NULL
 `
 
 type FindProofParams struct {
@@ -139,7 +132,7 @@ func (q *Queries) FindProof(ctx context.Context, arg FindProofParams) (Proof, er
 }
 
 const getChallenge = `-- name: GetChallenge :one
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE id = ?
 `
 
@@ -153,16 +146,14 @@ func (q *Queries) GetChallenge(ctx context.Context, id int64) (Challenge, error)
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
-		&i.StoppedAt,
-		&i.SummaryMessageID,
-		&i.SummaryText,
-		&i.SummaryPartsSent,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const getChallengeByTopic = `-- name: GetChallengeByTopic :one
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE chat_id = ? AND thread_id = ? AND month = ?
 `
 
@@ -182,16 +173,14 @@ func (q *Queries) GetChallengeByTopic(ctx context.Context, arg GetChallengeByTop
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
-		&i.StoppedAt,
-		&i.SummaryMessageID,
-		&i.SummaryText,
-		&i.SummaryPartsSent,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const getLatestChallengeByTopic = `-- name: GetLatestChallengeByTopic :one
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE chat_id = ? AND thread_id = ? AND month <= ?
 ORDER BY month DESC
 LIMIT 1
@@ -213,16 +202,14 @@ func (q *Queries) GetLatestChallengeByTopic(ctx context.Context, arg GetLatestCh
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
-		&i.StoppedAt,
-		&i.SummaryMessageID,
-		&i.SummaryText,
-		&i.SummaryPartsSent,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const listChallengesByMonth = `-- name: ListChallengesByMonth :many
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE month = ?
 `
 
@@ -242,10 +229,8 @@ func (q *Queries) ListChallengesByMonth(ctx context.Context, month string) ([]Ch
 			&i.Month,
 			&i.StatsMessageID,
 			&i.StartDay,
-			&i.StoppedAt,
-			&i.SummaryMessageID,
-			&i.SummaryText,
-			&i.SummaryPartsSent,
+			&i.FinishDay,
+			&i.TgApiMessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -307,17 +292,7 @@ func (q *Queries) ListProofStats(ctx context.Context, challengeID int64) ([]List
 }
 
 const listSupportStats = `-- name: ListSupportStats :many
-SELECT r.user_id,
-    CAST(COALESCE(
-        (SELECT r2.user_name FROM reactions r2
-         WHERE r2.challenge_id = r.challenge_id AND r2.user_id = r.user_id AND r2.user_name != ''
-         ORDER BY r2.message_id DESC LIMIT 1),
-        (SELECT p2.user_name FROM proofs p2
-         WHERE p2.challenge_id = r.challenge_id AND p2.user_id = r.user_id
-         ORDER BY p2.message_id DESC LIMIT 1),
-        ''
-    ) AS TEXT) AS user_name,
-    COUNT(DISTINCT p.user_id) AS recipients
+SELECT r.user_id, COUNT(DISTINCT p.user_id) AS recipients
 FROM reactions r
 JOIN proofs p ON p.challenge_id = r.challenge_id AND p.message_id = r.message_id
 JOIN challenges c ON c.id = r.challenge_id
@@ -334,7 +309,6 @@ type ListSupportStatsParams struct {
 
 type ListSupportStatsRow struct {
 	UserID     int64
-	UserName   string
 	Recipients int64
 }
 
@@ -347,7 +321,7 @@ func (q *Queries) ListSupportStats(ctx context.Context, arg ListSupportStatsPara
 	var items []ListSupportStatsRow
 	for rows.Next() {
 		var i ListSupportStatsRow
-		if err := rows.Scan(&i.UserID, &i.UserName, &i.Recipients); err != nil {
+		if err := rows.Scan(&i.UserID, &i.Recipients); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -364,7 +338,7 @@ func (q *Queries) ListSupportStats(ctx context.Context, arg ListSupportStatsPara
 const removeReaction = `-- name: RemoveReaction :exec
 DELETE FROM reactions
 WHERE challenge_id = ?1 AND message_id = ?2 AND user_id = ?3
-AND EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND stopped_at = 0)
+AND EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
 `
 
 type RemoveReactionParams struct {
@@ -378,50 +352,34 @@ func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) 
 	return err
 }
 
-const setSummaryProgress = `-- name: SetSummaryProgress :exec
-UPDATE challenges SET summary_message_id = ?, summary_parts_sent = ?
+const setSummaryMessage = `-- name: SetSummaryMessage :exec
+UPDATE challenges SET tg_api_message_id = ?
 WHERE id = ?
 `
 
-type SetSummaryProgressParams struct {
-	SummaryMessageID int64
-	SummaryPartsSent int64
-	ID               int64
+type SetSummaryMessageParams struct {
+	TgApiMessageID int64
+	ID             int64
 }
 
-func (q *Queries) SetSummaryProgress(ctx context.Context, arg SetSummaryProgressParams) error {
-	_, err := q.db.ExecContext(ctx, setSummaryProgress, arg.SummaryMessageID, arg.SummaryPartsSent, arg.ID)
-	return err
-}
-
-const setSummaryText = `-- name: SetSummaryText :exec
-UPDATE challenges SET summary_text = ?
-WHERE id = ?
-`
-
-type SetSummaryTextParams struct {
-	SummaryText string
-	ID          int64
-}
-
-func (q *Queries) SetSummaryText(ctx context.Context, arg SetSummaryTextParams) error {
-	_, err := q.db.ExecContext(ctx, setSummaryText, arg.SummaryText, arg.ID)
+func (q *Queries) SetSummaryMessage(ctx context.Context, arg SetSummaryMessageParams) error {
+	_, err := q.db.ExecContext(ctx, setSummaryMessage, arg.TgApiMessageID, arg.ID)
 	return err
 }
 
 const stopChallenge = `-- name: StopChallenge :one
-UPDATE challenges SET stopped_at = ?
-WHERE id = ? AND stopped_at = 0
-RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, stopped_at, summary_message_id, summary_text, summary_parts_sent
+UPDATE challenges SET finish_day = ?
+WHERE id = ? AND finish_day IS NULL
+RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id
 `
 
 type StopChallengeParams struct {
-	StoppedAt int64
+	FinishDay sql.NullInt64
 	ID        int64
 }
 
 func (q *Queries) StopChallenge(ctx context.Context, arg StopChallengeParams) (Challenge, error) {
-	row := q.db.QueryRowContext(ctx, stopChallenge, arg.StoppedAt, arg.ID)
+	row := q.db.QueryRowContext(ctx, stopChallenge, arg.FinishDay, arg.ID)
 	var i Challenge
 	err := row.Scan(
 		&i.ID,
@@ -430,10 +388,8 @@ func (q *Queries) StopChallenge(ctx context.Context, arg StopChallengeParams) (C
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
-		&i.StoppedAt,
-		&i.SummaryMessageID,
-		&i.SummaryText,
-		&i.SummaryPartsSent,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }

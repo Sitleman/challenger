@@ -36,7 +36,7 @@ type Board struct {
 	StartDay     int
 	Shown        int
 	Today        int
-	Finished     bool
+	FinishDay    int
 	Participants []Participant
 }
 
@@ -54,10 +54,9 @@ func NewBoard(month time.Time, startDay int, proofs []Proof, now time.Time) Boar
 	return newBoard(month, startDay, proofs, shown, today)
 }
 
-func NewFinalBoard(month time.Time, startDay int, proofs []Proof, stoppedAt time.Time) Board {
-	shown, _ := progress(month, daysIn(month), stoppedAt)
-	b := newBoard(month, startDay, proofs, shown, 0)
-	b.Finished = true
+func NewFinalBoard(month time.Time, startDay, finishDay int, proofs []Proof) Board {
+	b := newBoard(month, startDay, proofs, min(finishDay, daysIn(month)), 0)
+	b.FinishDay = b.Shown
 	return b
 }
 

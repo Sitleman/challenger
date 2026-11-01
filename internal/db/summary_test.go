@@ -16,14 +16,14 @@ func TestStoppedChallengeRejectsProofAndReactionChanges(t *testing.T) {
 	q := openTestDB(t)
 	c := seedChallenge(t, q, -100)
 	seedProof(t, q, c.ID, 42, 7)
-	if err := q.AddReaction(ctx, AddReactionParams{ChallengeID: c.ID, MessageID: 42, UserID: 8, UserName: "B"}); err != nil {
+	if err := q.AddReaction(ctx, AddReactionParams{ChallengeID: c.ID, MessageID: 42, UserID: 8}); err != nil {
 		t.Fatal(err)
 	}
-	stopped, err := q.StopChallenge(ctx, StopChallengeParams{ID: c.ID, StoppedAt: 123})
-	if err != nil || stopped.StoppedAt != 123 {
+	stopped, err := q.StopChallenge(ctx, StopChallengeParams{ID: c.ID, FinishDay: sql.NullInt64{Int64: 26, Valid: true}})
+	if err != nil || !stopped.FinishDay.Valid || stopped.FinishDay.Int64 != 26 {
 		t.Fatalf("StopChallenge = %+v, %v", stopped, err)
 	}
-	if _, err := q.StopChallenge(ctx, StopChallengeParams{ID: c.ID, StoppedAt: 456}); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := q.StopChallenge(ctx, StopChallengeParams{ID: c.ID, FinishDay: sql.NullInt64{Int64: 27, Valid: true}}); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("second StopChallenge = %v, want sql.ErrNoRows", err)
 	}
 	if err := q.CreateProof(ctx, CreateProofParams{ChallengeID: c.ID, MessageID: 43, UserID: 9, UserName: "C", Day: 24}); err != nil {
@@ -44,7 +44,7 @@ func TestStoppedChallengeRejectsProofAndReactionChanges(t *testing.T) {
 	}
 }
 
-func TestSupportCountsDistinctOthersAndRecoversLegacyNames(t *testing.T) {
+func TestSupportCountsDistinctOthersWithoutStoredNames(t *testing.T) {
 	ctx := context.Background()
 	q := openTestDB(t)
 	c := seedChallenge(t, q, -100)
@@ -61,7 +61,7 @@ func TestSupportCountsDistinctOthersAndRecoversLegacyNames(t *testing.T) {
 		{MessageID: 1, UserID: 1},
 		{MessageID: 1, UserID: 2}, {MessageID: 2, UserID: 2}, {MessageID: 3, UserID: 2},
 		{MessageID: 4, UserID: 2}, {MessageID: 5, UserID: 2},
-		{MessageID: 1, UserID: 9, UserName: "Supporter"},
+		{MessageID: 1, UserID: 9},
 	} {
 		reaction.ChallengeID = c.ID
 		if err := q.AddReaction(ctx, reaction); err != nil {
@@ -72,10 +72,10 @@ func TestSupportCountsDistinctOthersAndRecoversLegacyNames(t *testing.T) {
 	if err != nil || len(rows) != 2 {
 		t.Fatalf("ListSupportStats = %+v, %v", rows, err)
 	}
-	if rows[0].UserID != 2 || rows[0].Recipients != 2 || rows[0].UserName != "Legacy" {
-		t.Fatalf("legacy supporter = %+v, want user 2, two recipients and recovered name", rows[0])
+	if rows[0].UserID != 2 || rows[0].Recipients != 2 {
+		t.Fatalf("legacy supporter = %+v, want user 2 and two recipients", rows[0])
 	}
-	if rows[1].UserID != 9 || rows[1].Recipients != 1 || rows[1].UserName != "Supporter" {
+	if rows[1].UserID != 9 || rows[1].Recipients != 1 {
 		t.Fatalf("supporter without proofs = %+v", rows[1])
 	}
 }
@@ -128,7 +128,7 @@ func TestSummaryMigrationPreservesExistingChallengeData(t *testing.T) {
 		}
 		q := New(conn)
 		c, err := q.GetChallenge(ctx, 1)
-		if err != nil || c.StoppedAt != 0 || c.SummaryMessageID != 0 || c.SummaryText != "" || c.SummaryPartsSent != 0 {
+		if err != nil || c.FinishDay.Valid || c.TgApiMessageID != 0 {
 			t.Fatalf("migrated challenge = %+v, %v", c, err)
 		}
 		rows, err := q.ListProofStats(ctx, c.ID)

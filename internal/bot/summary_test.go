@@ -9,7 +9,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-	"unicode/utf16"
 
 	"github.com/Sitleman/challenger/internal/config"
 	"github.com/Sitleman/challenger/internal/db"
@@ -18,14 +17,16 @@ import (
 )
 
 type summaryAPI struct {
-	mu         sync.Mutex
-	messages   []telego.SendMessageParams
-	edits      []telego.EditMessageTextParams
-	failSends  int
-	failSendAt int
-	sendCalls  int
-	reactions  int
-	groupAdmin bool
+	mu              sync.Mutex
+	messages        []telego.SendMessageParams
+	edits           []telego.EditMessageTextParams
+	failSends       int
+	failMembers     bool
+	editNotModified bool
+	memberNames     map[int64]string
+	memberCalls     []int64
+	reactions       int
+	groupAdmin      bool
 }
 
 func (a *summaryAPI) Call(_ context.Context, url string, data *ta.RequestData) (*ta.Response, error) {
@@ -34,8 +35,7 @@ func (a *summaryAPI) Call(_ context.Context, url string, data *ta.RequestData) (
 	result := `true`
 	switch url[strings.LastIndex(url, "/")+1:] {
 	case "sendMessage":
-		a.sendCalls++
-		if a.failSends > 0 || a.sendCalls == a.failSendAt {
+		if a.failSends > 0 {
 			a.failSends--
 			return &ta.Response{Error: &ta.Error{ErrorCode: 403, Description: "Forbidden"}}, nil
 		}
@@ -51,15 +51,30 @@ func (a *summaryAPI) Call(_ context.Context, url string, data *ta.RequestData) (
 			return nil, err
 		}
 		a.edits = append(a.edits, params)
+		if a.editNotModified {
+			return &ta.Response{Error: &ta.Error{ErrorCode: 400, Description: "Bad Request: message is not modified"}}, nil
+		}
 		result = `{"message_id":1,"date":1,"chat":{"id":-100123,"type":"supergroup"}}`
 	case "setMessageReaction":
 		a.reactions++
 	case "getChatMember":
+		var params telego.GetChatMemberParams
+		if err := json.Unmarshal(data.BodyRaw, &params); err != nil {
+			return nil, err
+		}
+		a.memberCalls = append(a.memberCalls, params.UserID)
+		if a.failMembers {
+			return &ta.Response{Error: &ta.Error{ErrorCode: 400, Description: "user not found"}}, nil
+		}
 		status := "member"
 		if a.groupAdmin {
 			status = "administrator"
 		}
-		result = fmt.Sprintf(`{"status":%q,"user":{"id":8,"is_bot":false,"first_name":"Member"}}`, status)
+		name := a.memberNames[params.UserID]
+		if name == "" {
+			name = "Member"
+		}
+		result = fmt.Sprintf(`{"status":%q,"user":{"id":%d,"is_bot":false,"first_name":%q}}`, status, params.UserID, name)
 	default:
 		return nil, fmt.Errorf("unexpected method: %s", url)
 	}
@@ -116,7 +131,7 @@ func TestStopChallengePublishesOnceAndIgnoresLateEvents(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, user := range []int64{2, 3} {
-		if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 10, UserID: user, UserName: "Supporter"}); err != nil {
+		if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 10, UserID: user}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -124,7 +139,7 @@ func TestStopChallengePublishesOnceAndIgnoresLateEvents(t *testing.T) {
 	cmd.Text += "@ChallengerBot"
 	h.handle(ctx, telego.Update{Message: cmd})
 	c, err := h.q.GetChallenge(ctx, c.ID)
-	if err != nil || c.StoppedAt != cmd.Date || c.SummaryMessageID == 0 {
+	if err != nil || !c.FinishDay.Valid || c.FinishDay.Int64 != 26 || c.TgApiMessageID == 0 {
 		t.Fatalf("stopped challenge = %+v, %v", c, err)
 	}
 	h.handle(ctx, telego.Update{MessageReaction: &telego.MessageReactionUpdated{
@@ -156,8 +171,17 @@ func TestStopChallengePublishesOnceAndIgnoresLateEvents(t *testing.T) {
 	if summaries != 1 || api.reactions != 0 {
 		t.Fatalf("summaries = %d, reactions = %d, want 1 and 0", summaries, api.reactions)
 	}
-	if len(api.edits) == 0 || !strings.Contains(api.edits[len(api.edits)-1].Text, "Завершён 26.10") {
-		t.Fatalf("final stats not frozen: %+v", api.edits)
+	statsFrozen, summaryUpdated := false, false
+	for _, edit := range api.edits {
+		if edit.MessageID == 1 && strings.Contains(edit.Text, "Завершён 26.10") {
+			statsFrozen = true
+		}
+		if edit.MessageID == int(c.TgApiMessageID) && strings.Contains(edit.Text, "Anna — 1/3") {
+			summaryUpdated = true
+		}
+	}
+	if !statsFrozen || !summaryUpdated {
+		t.Fatalf("final stats not frozen or existing summary not updated: %+v", api.edits)
 	}
 }
 
@@ -171,7 +195,7 @@ func TestStopChallengeCanRetryFailedPublicationWithoutChangingEndDay(t *testing.
 	h.handle(context.Background(), telego.Update{Message: cmd})
 	h.stats.wait()
 	got, err := h.q.GetChallenge(context.Background(), c.ID)
-	if err != nil || got.StoppedAt != cmd.Date-24*60*60 || got.SummaryMessageID == 0 {
+	if err != nil || !got.FinishDay.Valid || got.FinishDay.Int64 != 26 || got.TgApiMessageID == 0 {
 		t.Fatalf("retried challenge = %+v, %v", got, err)
 	}
 	api.mu.Lock()
@@ -191,7 +215,7 @@ func TestStopChallengePreviousMonthAndGroupAdmin(t *testing.T) {
 	h.handle(context.Background(), telego.Update{Message: cmd})
 	h.stats.wait()
 	got, err := h.q.GetChallenge(context.Background(), c.ID)
-	if err != nil || got.SummaryMessageID == 0 {
+	if err != nil || got.TgApiMessageID == 0 {
 		t.Fatalf("previous month not stopped: %+v, %v", got, err)
 	}
 	api.mu.Lock()
@@ -223,7 +247,7 @@ func TestStopChallengeRejectsNonAdminsAndWrongTopics(t *testing.T) {
 			h.handle(context.Background(), telego.Update{Message: cmd})
 			if c.ID != 0 {
 				got, err := h.q.GetChallenge(context.Background(), c.ID)
-				if err != nil || got.StoppedAt != 0 {
+				if err != nil || got.FinishDay.Valid {
 					t.Fatalf("challenge unexpectedly stopped: %+v, %v", got, err)
 				}
 			}
@@ -231,66 +255,109 @@ func TestStopChallengeRejectsNonAdminsAndWrongTopics(t *testing.T) {
 	}
 }
 
-func TestStopChallengeResumesLongSummaryAfterPartialSend(t *testing.T) {
-	ctx := context.Background()
-	h, api := summaryHandler(t)
-	c := summaryChallenge(t, h)
-	for id := int64(10); id < 100; id++ {
-		if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: id, UserID: 1, UserName: "Anna", Day: 24}); err != nil {
-			t.Fatal(err)
-		}
-		for _, user := range []int64{2, 3} {
-			if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: id, UserID: user, UserName: "B"}); err != nil {
-				t.Fatal(err)
+func TestStopChallengeFinishesAtChallengeDayBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		at   time.Time
+		want int64
+	}{
+		{time.Date(2026, 10, 26, 2, 59, 0, 0, time.UTC), 25},
+		{time.Date(2026, 10, 26, 3, 0, 0, 0, time.UTC), 26},
+		{time.Date(2026, 11, 1, 2, 59, 0, 0, time.UTC), 31},
+	} {
+		t.Run(tc.at.Format(time.RFC3339), func(t *testing.T) {
+			h, _ := summaryHandler(t)
+			c := summaryChallenge(t, h)
+			h.handle(context.Background(), telego.Update{Message: summaryCommand(tc.at)})
+			got, err := h.q.GetChallenge(context.Background(), c.ID)
+			if err != nil || !got.FinishDay.Valid || got.FinishDay.Int64 != tc.want {
+				t.Fatalf("FinishDay = %+v, err = %v, want %d", got.FinishDay, err, tc.want)
 			}
-		}
-	}
-	api.failSendAt = 2
-	cmd := summaryCommand(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))
-	h.handle(ctx, telego.Update{Message: cmd})
-	partial, err := h.q.GetChallenge(ctx, c.ID)
-	if err != nil || partial.SummaryPartsSent != 1 || partial.SummaryMessageID == 0 {
-		t.Fatalf("partial publication = %+v, %v", partial, err)
-	}
-	parts := summaryParts(partial.SummaryText)
-	if len(parts) < 2 {
-		t.Fatal("expected multipart summary")
-	}
-	h.handle(ctx, telego.Update{Message: cmd})
-	h.stats.wait()
-	complete, err := h.q.GetChallenge(ctx, c.ID)
-	if err != nil || int(complete.SummaryPartsSent) != len(parts) || complete.SummaryText != partial.SummaryText || complete.SummaryMessageID != partial.SummaryMessageID {
-		t.Fatalf("retry did not complete saved summary: %+v, %v", complete, err)
-	}
-	api.mu.Lock()
-	defer api.mu.Unlock()
-	if len(api.messages) != len(parts)+1 {
-		t.Fatalf("successful sends = %d, want %d parts and one error reply", len(api.messages), len(parts))
-	}
-	for i, part := range parts {
-		messageIndex := i
-		if i > 0 {
-			messageIndex++
-		}
-		if api.messages[messageIndex].Text != part {
-			t.Fatalf("part %d repeated or skipped", i)
-		}
+		})
 	}
 }
 
-func TestSummaryPartsPreserveHTMLLinesAndUnicode(t *testing.T) {
-	line := "<a href=\"https://t.me/c/123/10\">" + strings.Repeat("🦊", 40) + "</a>"
-	text := strings.Repeat(line+"\n", 100) + "Готово"
-	parts := summaryParts(text)
-	if len(parts) < 2 || strings.Join(parts, "\n") != text {
-		t.Fatal("parts do not preserve the original text")
+func TestStopChallengeResolvesWinnerNameOnEveryRender(t *testing.T) {
+	ctx := context.Background()
+	h, api := summaryHandler(t)
+	c := summaryChallenge(t, h)
+	for _, user := range []int64{1, 2} {
+		if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: user + 10, UserID: user, UserName: "Anna", Day: 24}); err != nil {
+			t.Fatal(err)
+		}
+		if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: user + 10, UserID: 9}); err != nil {
+			t.Fatal(err)
+		}
 	}
-	for _, part := range parts {
-		if n := len(utf16.Encode([]rune(part))); n > 4096 {
-			t.Fatalf("part exceeds Telegram limit: %d", n)
+	if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 11, UserID: 10}); err != nil {
+		t.Fatal(err)
+	}
+	api.memberNames = map[int64]string{9: "Old<&"}
+	cmd := summaryCommand(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))
+	h.handle(ctx, telego.Update{Message: cmd})
+	first, err := h.q.GetChallenge(ctx, c.ID)
+	if err != nil || first.TgApiMessageID == 0 {
+		t.Fatalf("first publication: %+v, %v", first, err)
+	}
+	api.mu.Lock()
+	firstText := api.messages[0].Text
+	api.memberNames[9] = "New<&"
+	api.mu.Unlock()
+	if !strings.Contains(firstText, "Old&lt;&amp;") {
+		t.Fatalf("name was not resolved: %s", firstText)
+	}
+	h.handle(ctx, telego.Update{Message: cmd})
+	h.stats.wait()
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if len(api.messages) != 1 || len(api.memberCalls) != 2 || api.memberCalls[0] != 9 || api.memberCalls[1] != 9 {
+		t.Fatalf("lookup should resolve only winners and reuse message: calls = %v, sends = %d", api.memberCalls, len(api.messages))
+	}
+	refreshed := false
+	for _, edit := range api.edits {
+		if edit.MessageID == int(first.TgApiMessageID) && strings.Contains(edit.Text, "New&lt;&amp;") {
+			refreshed = true
 		}
-		if strings.Count(part, "<a ") != strings.Count(part, "</a>") {
-			t.Fatalf("HTML tag split across parts: %s", part)
-		}
+	}
+	if !refreshed {
+		t.Fatalf("existing summary did not use fresh name: %+v", api.edits)
+	}
+}
+
+func TestStopChallengePublishesWithFallbackWhenNameLookupFails(t *testing.T) {
+	ctx := context.Background()
+	h, api := summaryHandler(t)
+	c := summaryChallenge(t, h)
+	if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: 10, UserID: 1, UserName: "Anna", Day: 24}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 10, UserID: 9}); err != nil {
+		t.Fatal(err)
+	}
+	api.failMembers = true
+	h.handle(ctx, telego.Update{Message: summaryCommand(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))})
+	h.stats.wait()
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if len(api.messages) != 1 || !strings.Contains(api.messages[0].Text, `href="tg://user?id=9">Участник 9</a>`) {
+		t.Fatalf("summary must still identify supporter: %+v", api.messages)
+	}
+}
+
+func TestStopChallengeAcceptsUnmodifiedMessage(t *testing.T) {
+	ctx := context.Background()
+	h, api := summaryHandler(t)
+	summaryChallenge(t, h)
+	cmd := summaryCommand(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))
+	h.handle(ctx, telego.Update{Message: cmd})
+	h.stats.wait()
+	api.mu.Lock()
+	api.editNotModified = true
+	api.mu.Unlock()
+	h.handle(ctx, telego.Update{Message: cmd})
+	h.stats.wait()
+	api.mu.Lock()
+	defer api.mu.Unlock()
+	if len(api.messages) != 1 {
+		t.Fatalf("unchanged summary should not cause a retry reply: %+v", api.messages)
 	}
 }

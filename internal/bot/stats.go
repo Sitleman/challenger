@@ -94,13 +94,17 @@ func (h *handler) renderStats(ctx context.Context, challengeID int64) error {
 
 	now := time.Now()
 	board := challenge.NewBoard(month, int(c.StartDay), toProofs(rows), now)
-	if c.StoppedAt != 0 {
-		board = challenge.NewFinalBoard(month, int(c.StartDay), toProofs(rows), time.Unix(c.StoppedAt, 0))
+	if c.FinishDay.Valid {
+		board = challenge.NewFinalBoard(month, int(c.StartDay), int(c.FinishDay.Int64), toProofs(rows))
+	}
+	text, err := board.Render(now)
+	if err != nil {
+		return fmt.Errorf("render stats: %w", err)
 	}
 	_, err = h.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
 		ChatID:    telego.ChatID{ID: c.ChatID},
 		MessageID: int(c.StatsMessageID),
-		Text:      board.Render(now),
+		Text:      text,
 		ParseMode: telego.ModeHTML,
 	})
 	if err != nil && !strings.Contains(err.Error(), "message is not modified") {

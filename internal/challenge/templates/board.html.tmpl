@@ -1,0 +1,12 @@
+{{if .FinishDay}}🏁 Челлендж завершён{{else}}📊 Челлендж{{end}} · {{.MonthName}} {{.Year}}
+{{if .FinishDay}}Старт {{.Start}} · Завершён {{.End}} · {{counted .Days "день" "дня" "дней"}}{{else}}Старт {{.Start}} · день {{.Days}} из {{.TotalDays}}{{end}}
+
+👥 <b>Участники</b>{{range .Participants}}
+{{.Avatar}} {{.Name}} — {{.Score}}/{{.Closed}}{{if .Streak}} · 🔥{{.Streak}}{{end}}{{else}}
+Пока никто не отправил #task{{end}}{{if .Participants}}
+
+<code>     </code>{{range .Participants}}  {{.Avatar}}{{end}}{{range .Rows}}
+<code>{{.Date}}</code>{{range .Cells}}  {{.}}{{end}}{{end}}{{end}}
+
+{{if .FinishDay}}✅ засчитан · 🟡 не подтверждён · ❌ пропуск{{else}}✅ засчитан · 🟡 ждёт реакций · ❌ пропуск
+обновлено {{.UpdatedDate}} в {{.UpdatedTime}}{{end}}

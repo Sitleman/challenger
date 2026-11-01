@@ -14,7 +14,7 @@ func TestRender(t *testing.T) {
 	}
 	now := at(26, 10).Add(33 * time.Minute)
 
-	got := NewBoard(october, 24, proofs, now).Render(now)
+	got := renderBoard(t, NewBoard(october, 24, proofs, now), now)
 
 	want := "📊 Челлендж · Октябрь 2026\n" +
 		"Старт 24.10 · день 3 из 8\n" +
@@ -38,7 +38,7 @@ func TestRender(t *testing.T) {
 func TestRenderWithoutParticipants(t *testing.T) {
 	now := at(24, 9)
 
-	got := NewBoard(october, 24, nil, now).Render(now)
+	got := renderBoard(t, NewBoard(october, 24, nil, now), now)
 
 	want := "📊 Челлендж · Октябрь 2026\n" +
 		"Старт 24.10 · день 1 из 8\n" +
@@ -51,4 +51,13 @@ func TestRenderWithoutParticipants(t *testing.T) {
 	if got != want {
 		t.Fatalf("Render() =\n%s\nwant\n%s", got, want)
 	}
+}
+
+func renderBoard(t *testing.T, b Board, now time.Time) string {
+	t.Helper()
+	text, err := b.Render(now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return text
 }
