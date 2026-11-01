@@ -23,10 +23,11 @@ var avatars = []string{
 }
 
 type Proof struct {
-	UserID   int64
-	UserName string
-	Day      int
-	Reactors int
+	MessageID int64
+	UserID    int64
+	UserName  string
+	Day       int
+	Reactors  int
 }
 
 type Board struct {
@@ -35,6 +36,7 @@ type Board struct {
 	StartDay     int
 	Shown        int
 	Today        int
+	Finished     bool
 	Participants []Participant
 }
 
@@ -48,9 +50,20 @@ type Participant struct {
 }
 
 func NewBoard(month time.Time, startDay int, proofs []Proof, now time.Time) Board {
-	b := Board{Month: month, DaysInMonth: daysIn(month), StartDay: max(startDay, 1)}
-	b.Shown, b.Today = progress(month, b.DaysInMonth, now)
-	for i, up := range collectProofs(proofs, b.StartDay) {
+	shown, today := progress(month, daysIn(month), now)
+	return newBoard(month, startDay, proofs, shown, today)
+}
+
+func NewFinalBoard(month time.Time, startDay int, proofs []Proof, stoppedAt time.Time) Board {
+	shown, _ := progress(month, daysIn(month), stoppedAt)
+	b := newBoard(month, startDay, proofs, shown, 0)
+	b.Finished = true
+	return b
+}
+
+func newBoard(month time.Time, startDay int, proofs []Proof, shown, today int) Board {
+	b := Board{Month: month, DaysInMonth: daysIn(month), StartDay: max(startDay, 1), Shown: shown, Today: today}
+	for i, up := range collectProofs(proofs, b.StartDay, b.Shown) {
 		b.Participants = append(b.Participants, newParticipant(i, up, b.StartDay, b.Shown, b.Today))
 	}
 	return b
@@ -86,11 +99,11 @@ type userProofs struct {
 	reactors map[int]int
 }
 
-func collectProofs(proofs []Proof, startDay int) []*userProofs {
+func collectProofs(proofs []Proof, startDay, endDay int) []*userProofs {
 	var ordered []*userProofs
 	byUser := map[int64]*userProofs{}
 	for _, p := range proofs {
-		if p.Day < startDay {
+		if p.Day < startDay || p.Day > endDay {
 			continue
 		}
 		up, ok := byUser[p.UserID]

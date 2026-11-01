@@ -37,16 +37,27 @@ func (b Board) Render(now time.Time) string {
 		lines = append(lines, "")
 		lines = append(lines, b.table()...)
 	}
-	lines = append(lines, "", legend, updatedAt(now.In(b.Month.Location())))
+	if b.Finished {
+		lines = append(lines, "", "✅ засчитан · 🟡 не подтверждён · ❌ пропуск")
+	} else {
+		lines = append(lines, "", legend, updatedAt(now.In(b.Month.Location())))
+	}
 	return strings.Join(lines, "\n")
 }
 
 func (b Board) title() string {
+	if b.Finished {
+		return fmt.Sprintf("🏁 Челлендж завершён · %s %d", monthNames[b.Month.Month()-1], b.Month.Year())
+	}
 	return fmt.Sprintf("📊 Челлендж · %s %d", monthNames[b.Month.Month()-1], b.Month.Year())
 }
 
 func (b Board) period() string {
 	start := b.Month.AddDate(0, 0, b.StartDay-1).Format("02.01")
+	if b.Finished {
+		end := b.Month.AddDate(0, 0, b.Shown-1).Format("02.01")
+		return fmt.Sprintf("Старт %s · Завершён %s · %s", start, end, counted(max(b.Shown-b.StartDay+1, 0), "день", "дня", "дней"))
+	}
 	return fmt.Sprintf("Старт %s · день %d из %d", start, max(b.Shown-b.StartDay+1, 0), b.DaysInMonth-b.StartDay+1)
 }
 

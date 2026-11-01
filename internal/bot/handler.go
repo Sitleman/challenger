@@ -15,6 +15,7 @@ import (
 
 const (
 	startChallengeCommand = "start_challenge"
+	stopChallengeCommand  = "stop_challenge"
 	trackedReaction       = "👀"
 	confirmedReaction     = "🏆"
 )
@@ -87,6 +88,8 @@ func (h *handler) handleMessage(ctx context.Context, msg *telego.Message) {
 	switch {
 	case commandName(msg.Text, h.username) == startChallengeCommand:
 		h.startChallenge(ctx, msg)
+	case commandName(msg.Text, h.username) == stopChallengeCommand:
+		h.stopChallenge(ctx, msg)
 	case hasHashtag(msg, challenge.Hashtag):
 		h.recordProof(ctx, msg)
 	}
@@ -205,7 +208,7 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		log.Printf("get challenge: %v", err)
 		return
 	}
-	if int64(day.Day()) < c.StartDay {
+	if c.StoppedAt != 0 || int64(day.Day()) < c.StartDay {
 		return
 	}
 	err = h.q.CreateProof(ctx, db.CreateProofParams{
@@ -241,7 +244,9 @@ func (h *handler) handleReaction(ctx context.Context, r *telego.MessageReactionU
 		return
 	}
 	if len(r.NewReaction) > 0 {
-		err = h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID})
+		err = h.q.AddReaction(ctx, db.AddReactionParams{
+			ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID, UserName: displayName(r.User),
+		})
 	} else {
 		err = h.q.RemoveReaction(ctx, db.RemoveReactionParams{ChallengeID: p.ChallengeID, MessageID: p.MessageID, UserID: r.User.ID})
 	}

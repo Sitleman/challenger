@@ -93,10 +93,14 @@ func (h *handler) renderStats(ctx context.Context, challengeID int64) error {
 	}
 
 	now := time.Now()
+	board := challenge.NewBoard(month, int(c.StartDay), toProofs(rows), now)
+	if c.StoppedAt != 0 {
+		board = challenge.NewFinalBoard(month, int(c.StartDay), toProofs(rows), time.Unix(c.StoppedAt, 0))
+	}
 	_, err = h.bot.EditMessageText(ctx, &telego.EditMessageTextParams{
 		ChatID:    telego.ChatID{ID: c.ChatID},
 		MessageID: int(c.StatsMessageID),
-		Text:      challenge.NewBoard(month, int(c.StartDay), toProofs(rows), now).Render(now),
+		Text:      board.Render(now),
 		ParseMode: telego.ModeHTML,
 	})
 	if err != nil && !strings.Contains(err.Error(), "message is not modified") {
@@ -109,10 +113,11 @@ func toProofs(rows []db.ListProofStatsRow) []challenge.Proof {
 	proofs := make([]challenge.Proof, len(rows))
 	for i, r := range rows {
 		proofs[i] = challenge.Proof{
-			UserID:   r.UserID,
-			UserName: r.UserName,
-			Day:      int(r.Day),
-			Reactors: int(r.Reactors),
+			MessageID: r.MessageID,
+			UserID:    r.UserID,
+			UserName:  r.UserName,
+			Day:       int(r.Day),
+			Reactors:  int(r.Reactors),
 		}
 	}
 	return proofs
