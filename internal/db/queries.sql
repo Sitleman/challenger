@@ -2,6 +2,12 @@
 SELECT * FROM challenges
 WHERE chat_id = ? AND thread_id = ? AND month = ?;
 
+-- name: GetLatestChallengeByTopic :one
+SELECT * FROM challenges
+WHERE chat_id = ? AND thread_id = ? AND month <= ?
+ORDER BY month DESC
+LIMIT 1;
+
 -- name: GetChallenge :one
 SELECT * FROM challenges
 WHERE id = ?;
@@ -15,19 +21,30 @@ INSERT INTO challenges (chat_id, thread_id, month, stats_message_id, start_day)
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
+-- name: StopChallenge :one
+UPDATE challenges SET finish_day = ?
+WHERE id = ? AND finish_day IS NULL
+RETURNING *;
+
+-- name: SetSummaryMessage :exec
+UPDATE challenges SET tg_api_message_id = ?
+WHERE id = ?;
+
 -- name: CreateProof :exec
 INSERT INTO proofs (challenge_id, message_id, user_id, user_name, day)
-VALUES (?, ?, ?, ?, ?)
+SELECT sqlc.arg(challenge_id), sqlc.arg(message_id), sqlc.arg(user_id), sqlc.arg(user_name), sqlc.arg(day)
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = sqlc.arg(challenge_id) AND finish_day IS NULL)
 ON CONFLICT DO NOTHING;
 
 -- name: FindProof :one
 SELECT p.* FROM proofs p
 JOIN challenges c ON c.id = p.challenge_id
-WHERE c.chat_id = ? AND p.message_id = ?;
+WHERE c.chat_id = ? AND p.message_id = ? AND c.finish_day IS NULL;
 
 -- name: AddReaction :exec
 INSERT INTO reactions (challenge_id, message_id, user_id)
-VALUES (?, ?, ?)
+SELECT sqlc.arg(challenge_id), sqlc.arg(message_id), sqlc.arg(user_id)
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = sqlc.arg(challenge_id) AND finish_day IS NULL)
 ON CONFLICT DO NOTHING;
 
 -- name: CountReactions :one
@@ -36,12 +53,23 @@ WHERE challenge_id = ? AND message_id = ?;
 
 -- name: RemoveReaction :exec
 DELETE FROM reactions
-WHERE challenge_id = ? AND message_id = ? AND user_id = ?;
+WHERE challenge_id = sqlc.arg(challenge_id) AND message_id = sqlc.arg(message_id) AND user_id = sqlc.arg(user_id)
+AND EXISTS (SELECT 1 FROM challenges WHERE id = sqlc.arg(challenge_id) AND finish_day IS NULL);
 
 -- name: ListProofStats :many
-SELECT p.user_id, p.user_name, p.day, COUNT(r.user_id) AS reactors
+SELECT p.message_id, p.user_id, p.user_name, p.day, COUNT(r.user_id) AS reactors
 FROM proofs p
 LEFT JOIN reactions r ON r.challenge_id = p.challenge_id AND r.message_id = p.message_id
 WHERE p.challenge_id = ?
 GROUP BY p.challenge_id, p.message_id
 ORDER BY p.message_id;
+
+-- name: ListSupportStats :many
+SELECT r.user_id, COUNT(DISTINCT p.user_id) AS recipients
+FROM reactions r
+JOIN proofs p ON p.challenge_id = r.challenge_id AND p.message_id = r.message_id
+JOIN challenges c ON c.id = r.challenge_id
+WHERE r.challenge_id = sqlc.arg(challenge_id) AND r.user_id != p.user_id
+AND p.day >= c.start_day AND p.day <= sqlc.arg(end_day)
+GROUP BY r.challenge_id, r.user_id
+ORDER BY recipients DESC, r.user_id;

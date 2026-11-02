@@ -7,11 +7,13 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const addReaction = `-- name: AddReaction :exec
 INSERT INTO reactions (challenge_id, message_id, user_id)
-VALUES (?, ?, ?)
+SELECT ?1, ?2, ?3
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
 ON CONFLICT DO NOTHING
 `
 
@@ -46,7 +48,7 @@ func (q *Queries) CountReactions(ctx context.Context, arg CountReactionsParams) 
 const createChallenge = `-- name: CreateChallenge :one
 INSERT INTO challenges (chat_id, thread_id, month, stats_message_id, start_day)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, chat_id, thread_id, month, stats_message_id, start_day
+RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id
 `
 
 type CreateChallengeParams struct {
@@ -73,13 +75,16 @@ func (q *Queries) CreateChallenge(ctx context.Context, arg CreateChallengeParams
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const createProof = `-- name: CreateProof :exec
 INSERT INTO proofs (challenge_id, message_id, user_id, user_name, day)
-VALUES (?, ?, ?, ?, ?)
+SELECT ?1, ?2, ?3, ?4, ?5
+WHERE EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
 ON CONFLICT DO NOTHING
 `
 
@@ -105,7 +110,7 @@ func (q *Queries) CreateProof(ctx context.Context, arg CreateProofParams) error 
 const findProof = `-- name: FindProof :one
 SELECT p.challenge_id, p.message_id, p.user_id, p.user_name, p.day FROM proofs p
 JOIN challenges c ON c.id = p.challenge_id
-WHERE c.chat_id = ? AND p.message_id = ?
+WHERE c.chat_id = ? AND p.message_id = ? AND c.finish_day IS NULL
 `
 
 type FindProofParams struct {
@@ -127,7 +132,7 @@ func (q *Queries) FindProof(ctx context.Context, arg FindProofParams) (Proof, er
 }
 
 const getChallenge = `-- name: GetChallenge :one
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE id = ?
 `
 
@@ -141,12 +146,14 @@ func (q *Queries) GetChallenge(ctx context.Context, id int64) (Challenge, error)
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const getChallengeByTopic = `-- name: GetChallengeByTopic :one
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE chat_id = ? AND thread_id = ? AND month = ?
 `
 
@@ -166,12 +173,43 @@ func (q *Queries) GetChallengeByTopic(ctx context.Context, arg GetChallengeByTop
 		&i.Month,
 		&i.StatsMessageID,
 		&i.StartDay,
+		&i.FinishDay,
+		&i.TgApiMessageID,
+	)
+	return i, err
+}
+
+const getLatestChallengeByTopic = `-- name: GetLatestChallengeByTopic :one
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
+WHERE chat_id = ? AND thread_id = ? AND month <= ?
+ORDER BY month DESC
+LIMIT 1
+`
+
+type GetLatestChallengeByTopicParams struct {
+	ChatID   int64
+	ThreadID int64
+	Month    string
+}
+
+func (q *Queries) GetLatestChallengeByTopic(ctx context.Context, arg GetLatestChallengeByTopicParams) (Challenge, error) {
+	row := q.db.QueryRowContext(ctx, getLatestChallengeByTopic, arg.ChatID, arg.ThreadID, arg.Month)
+	var i Challenge
+	err := row.Scan(
+		&i.ID,
+		&i.ChatID,
+		&i.ThreadID,
+		&i.Month,
+		&i.StatsMessageID,
+		&i.StartDay,
+		&i.FinishDay,
+		&i.TgApiMessageID,
 	)
 	return i, err
 }
 
 const listChallengesByMonth = `-- name: ListChallengesByMonth :many
-SELECT id, chat_id, thread_id, month, stats_message_id, start_day FROM challenges
+SELECT id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id FROM challenges
 WHERE month = ?
 `
 
@@ -191,6 +229,8 @@ func (q *Queries) ListChallengesByMonth(ctx context.Context, month string) ([]Ch
 			&i.Month,
 			&i.StatsMessageID,
 			&i.StartDay,
+			&i.FinishDay,
+			&i.TgApiMessageID,
 		); err != nil {
 			return nil, err
 		}
@@ -206,7 +246,7 @@ func (q *Queries) ListChallengesByMonth(ctx context.Context, month string) ([]Ch
 }
 
 const listProofStats = `-- name: ListProofStats :many
-SELECT p.user_id, p.user_name, p.day, COUNT(r.user_id) AS reactors
+SELECT p.message_id, p.user_id, p.user_name, p.day, COUNT(r.user_id) AS reactors
 FROM proofs p
 LEFT JOIN reactions r ON r.challenge_id = p.challenge_id AND r.message_id = p.message_id
 WHERE p.challenge_id = ?
@@ -215,10 +255,11 @@ ORDER BY p.message_id
 `
 
 type ListProofStatsRow struct {
-	UserID   int64
-	UserName string
-	Day      int64
-	Reactors int64
+	MessageID int64
+	UserID    int64
+	UserName  string
+	Day       int64
+	Reactors  int64
 }
 
 func (q *Queries) ListProofStats(ctx context.Context, challengeID int64) ([]ListProofStatsRow, error) {
@@ -231,6 +272,7 @@ func (q *Queries) ListProofStats(ctx context.Context, challengeID int64) ([]List
 	for rows.Next() {
 		var i ListProofStatsRow
 		if err := rows.Scan(
+			&i.MessageID,
 			&i.UserID,
 			&i.UserName,
 			&i.Day,
@@ -249,9 +291,54 @@ func (q *Queries) ListProofStats(ctx context.Context, challengeID int64) ([]List
 	return items, nil
 }
 
+const listSupportStats = `-- name: ListSupportStats :many
+SELECT r.user_id, COUNT(DISTINCT p.user_id) AS recipients
+FROM reactions r
+JOIN proofs p ON p.challenge_id = r.challenge_id AND p.message_id = r.message_id
+JOIN challenges c ON c.id = r.challenge_id
+WHERE r.challenge_id = ?1 AND r.user_id != p.user_id
+AND p.day >= c.start_day AND p.day <= ?2
+GROUP BY r.challenge_id, r.user_id
+ORDER BY recipients DESC, r.user_id
+`
+
+type ListSupportStatsParams struct {
+	ChallengeID int64
+	EndDay      int64
+}
+
+type ListSupportStatsRow struct {
+	UserID     int64
+	Recipients int64
+}
+
+func (q *Queries) ListSupportStats(ctx context.Context, arg ListSupportStatsParams) ([]ListSupportStatsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listSupportStats, arg.ChallengeID, arg.EndDay)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListSupportStatsRow
+	for rows.Next() {
+		var i ListSupportStatsRow
+		if err := rows.Scan(&i.UserID, &i.Recipients); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const removeReaction = `-- name: RemoveReaction :exec
 DELETE FROM reactions
-WHERE challenge_id = ? AND message_id = ? AND user_id = ?
+WHERE challenge_id = ?1 AND message_id = ?2 AND user_id = ?3
+AND EXISTS (SELECT 1 FROM challenges WHERE id = ?1 AND finish_day IS NULL)
 `
 
 type RemoveReactionParams struct {
@@ -263,4 +350,46 @@ type RemoveReactionParams struct {
 func (q *Queries) RemoveReaction(ctx context.Context, arg RemoveReactionParams) error {
 	_, err := q.db.ExecContext(ctx, removeReaction, arg.ChallengeID, arg.MessageID, arg.UserID)
 	return err
+}
+
+const setSummaryMessage = `-- name: SetSummaryMessage :exec
+UPDATE challenges SET tg_api_message_id = ?
+WHERE id = ?
+`
+
+type SetSummaryMessageParams struct {
+	TgApiMessageID int64
+	ID             int64
+}
+
+func (q *Queries) SetSummaryMessage(ctx context.Context, arg SetSummaryMessageParams) error {
+	_, err := q.db.ExecContext(ctx, setSummaryMessage, arg.TgApiMessageID, arg.ID)
+	return err
+}
+
+const stopChallenge = `-- name: StopChallenge :one
+UPDATE challenges SET finish_day = ?
+WHERE id = ? AND finish_day IS NULL
+RETURNING id, chat_id, thread_id, month, stats_message_id, start_day, finish_day, tg_api_message_id
+`
+
+type StopChallengeParams struct {
+	FinishDay sql.NullInt64
+	ID        int64
+}
+
+func (q *Queries) StopChallenge(ctx context.Context, arg StopChallengeParams) (Challenge, error) {
+	row := q.db.QueryRowContext(ctx, stopChallenge, arg.FinishDay, arg.ID)
+	var i Challenge
+	err := row.Scan(
+		&i.ID,
+		&i.ChatID,
+		&i.ThreadID,
+		&i.Month,
+		&i.StatsMessageID,
+		&i.StartDay,
+		&i.FinishDay,
+		&i.TgApiMessageID,
+	)
+	return i, err
 }

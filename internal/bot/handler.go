@@ -15,6 +15,7 @@ import (
 
 const (
 	startChallengeCommand = "start_challenge"
+	stopChallengeCommand  = "stop_challenge"
 	trackedReaction       = "👀"
 	confirmedReaction     = "🏆"
 )
@@ -87,6 +88,8 @@ func (h *handler) handleMessage(ctx context.Context, msg *telego.Message) {
 	switch {
 	case commandName(msg.Text, h.username) == startChallengeCommand:
 		h.startChallenge(ctx, msg)
+	case commandName(msg.Text, h.username) == stopChallengeCommand:
+		h.stopChallenge(ctx, msg)
 	case hasHashtag(msg, challenge.Hashtag):
 		h.recordProof(ctx, msg)
 	}
@@ -119,10 +122,15 @@ func (h *handler) startChallenge(ctx context.Context, msg *telego.Message) {
 		return
 	}
 
+	text, err := challenge.NewBoard(month, day.Day(), nil, now).Render(now)
+	if err != nil {
+		log.Printf("render stats: %v", err)
+		return
+	}
 	stats, err := h.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID:          telego.ChatID{ID: t.chatID},
 		MessageThreadID: int(t.threadID),
-		Text:            challenge.NewBoard(month, day.Day(), nil, now).Render(now),
+		Text:            text,
 		ParseMode:       telego.ModeHTML,
 	})
 	if err != nil {
@@ -205,7 +213,7 @@ func (h *handler) recordProof(ctx context.Context, msg *telego.Message) {
 		log.Printf("get challenge: %v", err)
 		return
 	}
-	if int64(day.Day()) < c.StartDay {
+	if c.FinishDay.Valid || int64(day.Day()) < c.StartDay {
 		return
 	}
 	err = h.q.CreateProof(ctx, db.CreateProofParams{

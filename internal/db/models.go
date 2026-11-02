@@ -4,6 +4,10 @@
 
 package db
 
+import (
+	"database/sql"
+)
+
 type Challenge struct {
 	ID             int64
 	ChatID         int64
@@ -11,6 +15,8 @@ type Challenge struct {
 	Month          string
 	StatsMessageID int64
 	StartDay       int64
+	FinishDay      sql.NullInt64
+	TgApiMessageID int64
 }
 
 type Proof struct {
