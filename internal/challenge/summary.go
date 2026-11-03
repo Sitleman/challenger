@@ -8,50 +8,56 @@ import (
 
 const summaryMaxLength = 1024
 
-type Supporter struct {
-	UserID     int64
-	Name       string
-	Recipients int
-}
+var challengeMonths = []string{"Январский", "Февральский", "Мартовский", "Апрельский", "Майский", "Июньский", "Июльский", "Августовский", "Сентябрьский", "Октябрьский", "Ноябрьский", "Декабрьский"}
+var dateMonths = []string{"января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"}
 
 type Summary struct {
 	Board          Board
 	Proofs         []Proof
-	Supporters     []Supporter
 	ChatID         int64
 	StatsMessageID int64
 }
 
-type rankedParticipant struct {
+type summaryPerson struct {
+	UserID int64
 	Name   string
+}
+
+type rankedParticipant struct {
+	summaryPerson
 	Prefix string
 	Score  int
 }
 
-type popularProof struct {
-	Name     string
-	Reactors int
-	URL      string
+type proofLink struct {
+	Date string
+	URL  string
+}
+
+type popularAuthor struct {
+	summaryPerson
+	Proofs  []proofLink
+	Omitted int
 }
 
 type summaryView struct {
-	Start            string
-	End              string
+	Month            string
+	Period           string
 	Days             int
 	ParticipantCount int
 	Total            int
+	Possible         int
 	Pending          int
 	Ranking          []rankedParticipant
-	Series           []string
+	Series           []summaryPerson
 	Streak           int
-	Popular          []popularProof
-	Supporters       []Supporter
+	Popular          []popularAuthor
+	Reactors         int
 	StatsURL         string
 	NameLimit        int
 	RankingOmitted   int
 	SeriesOmitted    int
 	PopularOmitted   int
-	SupportOmitted   int
 	Compact          bool
 }
 
@@ -65,7 +71,10 @@ func (s Summary) Render() (string, error) {
 		if messageLength(text) <= summaryMaxLength {
 			return text, nil
 		}
-		limit := max(len(view.Ranking), len(view.Series), len(view.Popular), len(view.Supporters))
+		limit := max(len(view.Ranking), len(view.Series), len(view.Popular))
+		for _, author := range view.Popular {
+			limit = max(limit, len(author.Proofs))
+		}
 		if limit > 1 {
 			view.limit(max(limit/2, 1))
 		} else if view.NameLimit > 16 {
@@ -78,11 +87,30 @@ func (s Summary) Render() (string, error) {
 
 func (s Summary) view() summaryView {
 	b := s.Board
+	period := fmt.Sprintf("%d–%d %s", b.StartDay, b.Shown, dateMonths[b.Month.Month()-1])
+	if b.StartDay == b.Shown {
+		period = fmt.Sprintf("%d %s", b.Shown, dateMonths[b.Month.Month()-1])
+	}
 	view := summaryView{
-		Start: b.Month.AddDate(0, 0, b.StartDay-1).Format("02.01"),
-		End:   b.Month.AddDate(0, 0, b.Shown-1).Format("02.01.2006"),
-		Days:  max(b.Shown-b.StartDay+1, 0), ParticipantCount: len(b.Participants),
+		Month: challengeMonths[b.Month.Month()-1], Period: period,
+		Days: max(b.Shown-b.StartDay+1, 0), ParticipantCount: len(b.Participants),
 		NameLimit: 256, StatsURL: MessageURL(s.ChatID, s.StatsMessageID),
+	}
+	view.Possible = view.Days * view.ParticipantCount
+	names := map[string]int{}
+	for _, p := range b.Participants {
+		names[summaryName(p.Name)]++
+	}
+	people := map[int64]summaryPerson{}
+	for _, p := range b.Participants {
+		name := summaryName(p.Name)
+		if names[name] > 1 {
+			name = p.Name
+		}
+		if name == "" {
+			name = fmt.Sprintf("Участник %d", p.UserID)
+		}
+		people[p.UserID] = summaryPerson{UserID: p.UserID, Name: name}
 	}
 	participants := slices.Clone(b.Participants)
 	slices.SortStableFunc(participants, func(a, b Participant) int { return b.Score - a.Score })
@@ -91,11 +119,12 @@ func (s Summary) view() summaryView {
 		if i > 0 && p.Score != participants[i-1].Score {
 			rank = i + 1
 		}
-		prefix := fmt.Sprintf("%d.", rank)
+		prefix := ""
 		if p.Score > 0 && rank <= 3 {
 			prefix = []string{"🥇", "🥈", "🥉"}[rank-1]
 		}
-		view.Ranking = append(view.Ranking, rankedParticipant{Name: p.Name, Prefix: prefix, Score: p.Score})
+		person := people[p.UserID]
+		view.Ranking = append(view.Ranking, rankedParticipant{summaryPerson: person, Prefix: prefix, Score: p.Score})
 		view.Total += p.Score
 		longest, current := 0, 0
 		for _, status := range p.Statuses {
@@ -110,10 +139,9 @@ func (s Summary) view() summaryView {
 			view.Streak, view.Series = longest, nil
 		}
 		if longest > 0 && longest == view.Streak {
-			view.Series = append(view.Series, p.Name)
+			view.Series = append(view.Series, person)
 		}
 	}
-	best := 0
 	for _, p := range s.Proofs {
 		if p.Day < b.StartDay || p.Day > b.Shown {
 			continue
@@ -121,26 +149,32 @@ func (s Summary) view() summaryView {
 		if p.Reactors < MinReactors {
 			view.Pending++
 		}
-		if p.Reactors > best {
-			best, view.Popular = p.Reactors, nil
-		}
-		if p.Reactors > 0 && p.Reactors == best {
-			view.Popular = append(view.Popular, popularProof{Name: p.UserName, Reactors: p.Reactors, URL: MessageURL(s.ChatID, p.MessageID)})
-		}
+		view.Reactors = max(view.Reactors, p.Reactors)
 	}
-	best = 0
-	for _, p := range s.Supporters {
-		if p.Recipients > best {
-			best, view.Supporters = p.Recipients, nil
+	byAuthor := map[int64]int{}
+	proofs := slices.Clone(s.Proofs)
+	slices.SortStableFunc(proofs, func(a, b Proof) int { return a.Day - b.Day })
+	for _, p := range proofs {
+		if p.Day < b.StartDay || p.Day > b.Shown || p.Reactors == 0 || p.Reactors != view.Reactors {
+			continue
 		}
-		if p.Recipients > 0 && p.Recipients == best {
-			if p.Name == "" {
-				p.Name = fmt.Sprintf("Участник %d", p.UserID)
-			}
-			view.Supporters = append(view.Supporters, p)
+		index, ok := byAuthor[p.UserID]
+		if !ok {
+			index = len(view.Popular)
+			byAuthor[p.UserID] = index
+			view.Popular = append(view.Popular, popularAuthor{summaryPerson: people[p.UserID]})
 		}
+		date := b.Month.AddDate(0, 0, p.Day-1).Format("02.01")
+		view.Popular[index].Proofs = append(view.Popular[index].Proofs, proofLink{Date: date, URL: MessageURL(s.ChatID, p.MessageID)})
 	}
 	return view
+}
+
+func summaryName(name string) string {
+	if i := strings.LastIndex(name, " (@"); i > 0 && strings.HasSuffix(name, ")") {
+		return name[:i]
+	}
+	return name
 }
 
 func (v *summaryView) limit(n int) {
@@ -151,8 +185,11 @@ func (v *summaryView) limit(n int) {
 	v.Series = v.Series[:min(len(v.Series), n)]
 	v.PopularOmitted += max(len(v.Popular)-n, 0)
 	v.Popular = v.Popular[:min(len(v.Popular), n)]
-	v.SupportOmitted += max(len(v.Supporters)-n, 0)
-	v.Supporters = v.Supporters[:min(len(v.Supporters), n)]
+	for i := range v.Popular {
+		author := &v.Popular[i]
+		author.Omitted += max(len(author.Proofs)-n, 0)
+		author.Proofs = author.Proofs[:min(len(author.Proofs), n)]
+	}
 }
 
 func MessageURL(chatID, messageID int64) string {

@@ -163,7 +163,7 @@ func TestStopChallengePublishesOnceAndIgnoresLateEvents(t *testing.T) {
 	for _, msg := range api.messages {
 		if strings.Contains(msg.Text, "🏁") {
 			summaries++
-			if msg.MessageThreadID != 5 || msg.ParseMode != telego.ModeHTML || !strings.Contains(msg.Text, "Anna — 1/3") || !strings.Contains(msg.Text, "Главная поддержка") {
+			if msg.MessageThreadID != 5 || msg.ParseMode != telego.ModeHTML || !strings.Contains(msg.Text, "Anna</a> — 1/3") || strings.Contains(msg.Text, "Главная поддержка") {
 				t.Fatalf("summary = %+v", msg)
 			}
 		}
@@ -176,7 +176,7 @@ func TestStopChallengePublishesOnceAndIgnoresLateEvents(t *testing.T) {
 		if edit.MessageID == 1 && strings.Contains(edit.Text, "Завершён 26.10") {
 			statsFrozen = true
 		}
-		if edit.MessageID == int(c.TgApiMessageID) && strings.Contains(edit.Text, "Anna — 1/3") {
+		if edit.MessageID == int(c.TgApiMessageID) && strings.Contains(edit.Text, "Anna</a> — 1/3") {
 			summaryUpdated = true
 		}
 	}
@@ -201,7 +201,7 @@ func TestStopChallengeCanRetryFailedPublicationWithoutChangingEndDay(t *testing.
 	api.mu.Lock()
 	defer api.mu.Unlock()
 	last := api.messages[len(api.messages)-1]
-	if !strings.Contains(last.Text, "24.10–26.10.2026") {
+	if !strings.Contains(last.Text, "24–26 октября") {
 		t.Fatalf("retry moved end day: %s", last.Text)
 	}
 }
@@ -220,7 +220,7 @@ func TestStopChallengePreviousMonthAndGroupAdmin(t *testing.T) {
 	}
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if !strings.Contains(api.messages[0].Text, "24.10–31.10.2026 · 8 дней") {
+	if !strings.Contains(api.messages[0].Text, "24–31 октября") {
 		t.Fatalf("wrong previous-month period: %s", api.messages[0].Text)
 	}
 }
@@ -276,58 +276,11 @@ func TestStopChallengeFinishesAtChallengeDayBoundary(t *testing.T) {
 	}
 }
 
-func TestStopChallengeResolvesWinnerNameOnEveryRender(t *testing.T) {
+func TestStopChallengeDoesNotLookUpSupporters(t *testing.T) {
 	ctx := context.Background()
 	h, api := summaryHandler(t)
 	c := summaryChallenge(t, h)
-	for _, user := range []int64{1, 2} {
-		if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: user + 10, UserID: user, UserName: "Anna", Day: 24}); err != nil {
-			t.Fatal(err)
-		}
-		if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: user + 10, UserID: 9}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 11, UserID: 10}); err != nil {
-		t.Fatal(err)
-	}
-	api.memberNames = map[int64]string{9: "Old<&"}
-	cmd := summaryCommand(time.Date(2026, 10, 26, 12, 0, 0, 0, time.UTC))
-	h.handle(ctx, telego.Update{Message: cmd})
-	first, err := h.q.GetChallenge(ctx, c.ID)
-	if err != nil || first.TgApiMessageID == 0 {
-		t.Fatalf("first publication: %+v, %v", first, err)
-	}
-	api.mu.Lock()
-	firstText := api.messages[0].Text
-	api.memberNames[9] = "New<&"
-	api.mu.Unlock()
-	if !strings.Contains(firstText, "Old&lt;&amp;") {
-		t.Fatalf("name was not resolved: %s", firstText)
-	}
-	h.handle(ctx, telego.Update{Message: cmd})
-	h.stats.wait()
-	api.mu.Lock()
-	defer api.mu.Unlock()
-	if len(api.messages) != 1 || len(api.memberCalls) != 2 || api.memberCalls[0] != 9 || api.memberCalls[1] != 9 {
-		t.Fatalf("lookup should resolve only winners and reuse message: calls = %v, sends = %d", api.memberCalls, len(api.messages))
-	}
-	refreshed := false
-	for _, edit := range api.edits {
-		if edit.MessageID == int(first.TgApiMessageID) && strings.Contains(edit.Text, "New&lt;&amp;") {
-			refreshed = true
-		}
-	}
-	if !refreshed {
-		t.Fatalf("existing summary did not use fresh name: %+v", api.edits)
-	}
-}
-
-func TestStopChallengePublishesWithFallbackWhenNameLookupFails(t *testing.T) {
-	ctx := context.Background()
-	h, api := summaryHandler(t)
-	c := summaryChallenge(t, h)
-	if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: 10, UserID: 1, UserName: "Anna", Day: 24}); err != nil {
+	if err := h.q.CreateProof(ctx, db.CreateProofParams{ChallengeID: c.ID, MessageID: 10, UserID: 1, UserName: "Anna (@anna)", Day: 24}); err != nil {
 		t.Fatal(err)
 	}
 	if err := h.q.AddReaction(ctx, db.AddReactionParams{ChallengeID: c.ID, MessageID: 10, UserID: 9}); err != nil {
@@ -338,8 +291,8 @@ func TestStopChallengePublishesWithFallbackWhenNameLookupFails(t *testing.T) {
 	h.stats.wait()
 	api.mu.Lock()
 	defer api.mu.Unlock()
-	if len(api.messages) != 1 || !strings.Contains(api.messages[0].Text, `href="tg://user?id=9">Участник 9</a>`) {
-		t.Fatalf("summary must still identify supporter: %+v", api.messages)
+	if len(api.messages) != 1 || len(api.memberCalls) != 0 || strings.Contains(api.messages[0].Text, "Главная поддержка") || !strings.Contains(api.messages[0].Text, `href="tg://user?id=1">Anna</a>`) {
+		t.Fatalf("unexpected summary or member lookup: %+v, %v", api.messages, api.memberCalls)
 	}
 }
 

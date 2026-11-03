@@ -103,24 +103,7 @@ func (h *handler) summaryText(ctx context.Context, c db.Challenge) (string, erro
 	}
 	proofs := toProofs(rows)
 	board := challenge.NewFinalBoard(month, int(c.StartDay), int(c.FinishDay.Int64), proofs)
-	stats, err := h.q.ListSupportStats(ctx, db.ListSupportStatsParams{ChallengeID: c.ID, EndDay: int64(board.Shown)})
-	if err != nil {
-		return "", fmt.Errorf("list support: %w", err)
-	}
-	var supporters []challenge.Supporter
-	for _, r := range stats {
-		if r.Recipients != stats[0].Recipients {
-			break
-		}
-		name := fmt.Sprintf("Участник %d", r.UserID)
-		member, err := h.bot.GetChatMember(ctx, &telego.GetChatMemberParams{ChatID: telego.ChatID{ID: c.ChatID}, UserID: r.UserID})
-		if err == nil {
-			user := member.MemberUser()
-			name = displayName(&user)
-		}
-		supporters = append(supporters, challenge.Supporter{UserID: r.UserID, Name: name, Recipients: int(r.Recipients)})
-	}
 	return (challenge.Summary{
-		Board: board, Proofs: proofs, Supporters: supporters, ChatID: c.ChatID, StatsMessageID: c.StatsMessageID,
+		Board: board, Proofs: proofs, ChatID: c.ChatID, StatsMessageID: c.StatsMessageID,
 	}).Render()
 }
