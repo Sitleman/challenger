@@ -38,6 +38,23 @@ systemctl enable --now docker
 Для локального `make run` эти переменные берутся из `.env`.
 Часовой пояс `CHALLENGE_TZ` по умолчанию — `Europe/Moscow`.
 
+Commit работающей версии хранится отдельно от checkout, в
+`/root/challenger-backups/deployed.commit`. Перед первым обновлением файл
+нужно один раз заполнить commit, из которого действительно собран запущенный
+образ. Для версии, перенесённой 3 ноября, это `c05cae0c4e4306722e42b9d99c7fafe409876bcb`:
+
+```bash
+set -eu
+backup_dir=/root/challenger-backups
+install -d -m 700 "$backup_dir"
+test ! -e "$backup_dir/deployed.commit"
+printf '%s\n' c05cae0c4e4306722e42b9d99c7fafe409876bcb > "$backup_dir/deployed.commit"
+```
+
+Если после переноса уже выкатывали другую версию, указать её проверенный
+commit. Не подставлять текущий `HEAD`: после отката или неудачной сборки он
+может отличаться от версии работающего контейнера.
+
 ## Обновление
 
 Сначала проверить `git status --short`: чужие изменения не сбрасывать.
@@ -53,13 +70,15 @@ git diff --cached --quiet
 deploy_stamp=$(date -u +%Y%m%dT%H%M%SZ)
 backup_dir=/root/challenger-backups
 install -d -m 700 "$backup_dir"
-previous_commit=$(git rev-parse HEAD)
+previous_commit=$(cat "$backup_dir/deployed.commit")
+git cat-file -e "$previous_commit^{commit}"
 rollback_tag="challenger-bot:before-$deploy_stamp"
 previous_image=$(docker inspect challenger-bot-1 --format '{{.Image}}')
 docker image tag "$previous_image" "$rollback_tag"
 printf '%s\n' "$previous_commit" > "$backup_dir/$deploy_stamp.commit"
 printf '%s\n' "$rollback_tag" > "$backup_dir/$deploy_stamp.image"
 git pull --ff-only
+target_commit=$(git rev-parse HEAD)
 docker compose build bot
 docker compose stop bot
 volume_dir=$(docker volume inspect challenger-data --format '{{.Mountpoint}}')
@@ -76,7 +95,10 @@ printf 'Rollback: %s\nBackup: %s\n' "$deploy_stamp" "$backup_file"
 При продолжении неудавшегося обновления сохранить исходные `previous_commit`
 и `rollback_tag` из файлов в `backup_dir`: checkout уже мог обновиться, хотя
 контейнер ещё работает на старом образе.
-После запуска выполнить [проверку](#проверка-запуска).
+После запуска выполнить [проверку](#проверка-запуска) и только после её успеха
+записать `target_commit` в файл работающей версии. Если новая версия не прошла
+проверку, сначала выполнить откат; не начинать очередное обновление с
+неподтверждённым контейнером.
 
 На сервере 1 CPU и 1 ГБ RAM. При полной сборке может понадобиться временный swap.
 Следующий блок применять только при отсутствии swap и такого файла:
@@ -151,6 +173,7 @@ cd /opt/challenger
 deploy_stamp=20261103T194000Z
 backup_dir=/root/challenger-backups
 previous_commit=$(cat "$backup_dir/$deploy_stamp.commit")
+target_commit=$previous_commit
 rollback_tag=$(cat "$backup_dir/$deploy_stamp.image")
 backup_file="$backup_dir/$deploy_stamp.tgz"
 docker image inspect "$rollback_tag" >/dev/null
@@ -171,21 +194,23 @@ docker compose up -d --no-build bot </dev/null
 Откат возвращает образ и БД вместе: старая версия может не поддерживать
 миграции новой. Текущее содержимое тома переносится в `aside_dir`, включая
 `-wal`/`-shm`, а не смешивается с восстановленными файлами.
-После проверки отката перед следующим обновлением вернуться на `master`
-командой `git switch master`.
+После [проверки](#проверка-запуска) сохранить `target_commit` в файле работающей
+версии тем же способом, что и при обновлении. Затем можно вернуться на `master`
+командой `git switch master`: checkout изменится, но следующий откат возьмёт
+commit из `deployed.commit`, соответствующий работающему образу и БД.
 
 ## Проверка запуска
 
 ```bash
+set -euo pipefail
 cd /opt/challenger
 systemctl is-enabled docker
 docker compose ps
 docker inspect challenger-bot-1 \
   --format 'status={{.State.Status}} restarts={{.RestartCount}} restart_policy={{.HostConfig.RestartPolicy.Name}}'
 docker compose logs --since 5m --no-color bot 2>&1 \
-  | sed -E 's/[0-9]{6,}:[A-Za-z0-9_-]{20,}/[REDACTED]/g' \
-  | grep -E 'bot @.* started|API response (getUpdates|editMessageText): Ok:|another bot instance is polling|render stats for challenge' \
-  | sed -E 's/, Result:.*$//'
+  | sed -E 's/[0-9]{6,}:[A-Za-z0-9_-]{20,}/[REDACTED]/g; /API call to:/d; s/, Result:.*$//' \
+  | grep -E 'bot @.* started|API response (getUpdates|editMessageText): Ok:|API response [[:alnum:]_]+: Ok: false|get updates:|getMe:|migrate up:|goose provider:|open sqlite:|database is in use|Execution error|Error on get me|panic:|fatal error:|another bot instance is polling|render stats for challenge'
 ```
 
 Ожидаются `running`, отсутствие перезапусков, строка
@@ -193,6 +218,26 @@ docker compose logs --since 5m --no-color bot 2>&1 \
 Первый ответ пустого long polling может занять 30 секунд. Обновление
 закреплённой статистики видно по `editMessageText`; ответ `message is not modified`
 означает, что текст уже актуален.
+
+Ошибки `get updates:`, `getMe:`, миграции, SQLite и выполнения API-запросов
+также остаются в выводе. Тела ответов и строки запросов удаляются до фильтрации,
+чтобы текст пользовательского сообщения не попал в вывод из-за совпадения с
+шаблоном ошибки. Состояния `running` недостаточно: пока нет успешного
+`getUpdates` или есть неустранённые ошибки, запуск не подтверждён и
+`deployed.commit` не менять. Ожидаемый `message is not modified` ошибкой запуска
+не считается.
+
+После успешной проверки обновления или отката сохранить `target_commit` из
+соответствующего блока выше. Если shell-сессия прервалась, сначала восстановить
+его значение по проверенной версии контейнера. Запись заменяется атомарно:
+
+```bash
+set -eu
+test -n "$target_commit"
+backup_dir=/root/challenger-backups
+printf '%s\n' "$target_commit" > "$backup_dir/deployed.commit.next"
+mv "$backup_dir/deployed.commit.next" "$backup_dir/deployed.commit"
+```
 
 Сырые debug-логи содержат URL с токеном и сообщения пользователей, поэтому
 перед публикацией использовать фильтрацию. При конфликте второго экземпляра
