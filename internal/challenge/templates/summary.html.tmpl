@@ -1,30 +1,24 @@
 {{$limit := .NameLimit -}}
-🏁 <b>Челлендж завершён!</b>
-{{.Start}}–{{.End}} · {{counted .Days "день" "дня" "дней"}} · {{counted .ParticipantCount "участник" "участника" "участников"}}
+🏁 <b>{{.Month}} челлендж завершён!</b>
+{{.Period}} · {{counted .ParticipantCount "участник" "участника" "участников"}}
 {{if .ParticipantCount}}
-<b>Результаты</b>{{range .Ranking}}
-{{.Prefix}} {{name .Name $limit}} — {{.Score}}/{{$.Days}}{{end}}{{if .RankingOmitted}}
+<b>Результаты · выполненные дни</b>{{range .Ranking}}
+{{if .Prefix}}{{.Prefix}} {{end}}<a href="tg://user?id={{.UserID}}">{{name .Name $limit}}</a> — {{.Score}}/{{$.Days}}{{end}}{{if .RankingOmitted}}
 …ещё {{.RankingOmitted}}{{end}}
 
-Вместе закрыли <b>{{counted .Total "день" "дня" "дней"}}</b> 💪{{if .Pending}}
+💪 Вместе — <b>{{.Total}} из {{.Possible}} возможных дней</b>{{if .Pending}}
 🟡 Без подтверждения: {{counted .Pending "пруф" "пруфа" "пруфов"}}{{end}}
 
-🔥 <b>Самая длинная серия</b>{{range .Series}}
-{{name . $limit}} — {{counted $.Streak "день" "дня" "дней"}} подряд{{else}}
-Нет подтверждённых дней{{end}}{{if .SeriesOmitted}}
+🔥 <b>Самая длинная серия{{if .Streak}} — {{counted .Streak "день" "дня" "дней"}}{{end}}</b>
+{{range $i, $person := .Series}}{{if $i}}{{if eq (len $.Series) 2}} и {{else}}, {{end}}{{end}}<a href="tg://user?id={{.UserID}}">{{name .Name $limit}}</a>{{else}}Нет подтверждённых дней{{end}}{{if .SeriesOmitted}}
 …ещё {{.SeriesOmitted}}{{end}}
 
-❤️ <b>Самый популярный пруф</b>{{range .Popular}}
-{{name .Name $limit}} — {{counted .Reactors "реакция" "реакции" "реакций"}}{{if .URL}} · <a href="{{.URL}}">посмотреть</a>{{end}}{{else}}
+❤️ <b>Популярные пруфы{{if .Reactors}} — по {{counted .Reactors "реакции" "реакции" "реакций"}}{{end}}</b>{{range .Popular}}
+<a href="tg://user?id={{.UserID}}">{{name .Name $limit}}</a> — {{range $i, $proof := .Proofs}}{{if $i}} · {{end}}{{if .URL}}<a href="{{.URL}}">{{.Date}}</a>{{else}}{{.Date}}{{end}}{{end}}{{if .Omitted}} · …ещё {{.Omitted}}{{end}}{{else}}
 На пруфах нет реакций{{end}}{{if .PopularOmitted}}
-…ещё {{.PopularOmitted}}{{end}}
-
-🤝 <b>Главная поддержка</b>{{range .Supporters}}
-<a href="tg://user?id={{.UserID}}">{{name .Name $limit}}</a> — подтвердил(а) пруфы других участников: {{.Recipients}}{{else}}
-Нет реакций на чужие пруфы{{end}}{{if .SupportOmitted}}
-…ещё {{.SupportOmitted}}{{end}}{{if and .Compact .StatsURL}}
+…ещё {{counted .PopularOmitted "автор" "автора" "авторов"}}{{end}}{{if and .Compact .StatsURL}}
 
 <a href="{{.StatsURL}}">Полная таблица</a>{{end}}
 
-Спасибо всем, кто участвовал и поддерживал других!{{else}}
+Спасибо за участие и поддержку друг друга!{{else}}
 Никто не отправил #task{{end}}

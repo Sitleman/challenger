@@ -41,6 +41,7 @@ type Board struct {
 }
 
 type Participant struct {
+	UserID   int64
 	Name     string
 	Avatar   string
 	Statuses []Status
@@ -94,6 +95,7 @@ func DayOf(t time.Time, loc *time.Location) time.Time {
 }
 
 type userProofs struct {
+	userID   int64
 	name     string
 	reactors map[int]int
 }
@@ -107,7 +109,7 @@ func collectProofs(proofs []Proof, startDay, endDay int) []*userProofs {
 		}
 		up, ok := byUser[p.UserID]
 		if !ok {
-			up = &userProofs{reactors: map[int]int{}}
+			up = &userProofs{userID: p.UserID, reactors: map[int]int{}}
 			byUser[p.UserID] = up
 			ordered = append(ordered, up)
 		}
@@ -121,6 +123,7 @@ func collectProofs(proofs []Proof, startDay, endDay int) []*userProofs {
 
 func newParticipant(index int, up *userProofs, startDay, shown, today int) Participant {
 	p := Participant{
+		UserID:   up.userID,
 		Name:     up.name,
 		Avatar:   avatars[index%len(avatars)],
 		Statuses: make([]Status, max(shown-startDay+1, 0)),
