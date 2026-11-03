@@ -2,6 +2,7 @@ package bot
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"path/filepath"
@@ -23,6 +24,7 @@ type summaryAPI struct {
 	failSends       int
 	failMembers     bool
 	editNotModified bool
+	editError       string
 	memberNames     map[int64]string
 	memberCalls     []int64
 	reactions       int
@@ -51,6 +53,9 @@ func (a *summaryAPI) Call(_ context.Context, url string, data *ta.RequestData) (
 			return nil, err
 		}
 		a.edits = append(a.edits, params)
+		if a.editError != "" {
+			return &ta.Response{Error: &ta.Error{ErrorCode: 400, Description: a.editError}}, nil
+		}
 		if a.editNotModified {
 			return &ta.Response{Error: &ta.Error{ErrorCode: 400, Description: "Bad Request: message is not modified"}}, nil
 		}
@@ -312,5 +317,53 @@ func TestStopChallengeAcceptsUnmodifiedMessage(t *testing.T) {
 	defer api.mu.Unlock()
 	if len(api.messages) != 1 {
 		t.Fatalf("unchanged summary should not cause a retry reply: %+v", api.messages)
+	}
+}
+
+func TestSummaryRepublishesOnlyMissingMessage(t *testing.T) {
+	for _, description := range []string{"Bad Request: message to edit not found", "Bad Request: message can't be edited", "Bad Request: can't parse entities"} {
+		t.Run(description, func(t *testing.T) {
+			ctx := context.Background()
+			h, api := summaryHandler(t)
+			c := summaryChallenge(t, h)
+			var err error
+			c, err = h.q.StopChallenge(ctx, db.StopChallengeParams{ID: c.ID, FinishDay: sql.NullInt64{Int64: 26, Valid: true}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := h.publishSummary(ctx, c); err != nil {
+				t.Fatal(err)
+			}
+			c, err = h.q.GetChallenge(ctx, c.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldID := c.TgApiMessageID
+			api.editError = description
+			err = h.publishSummary(ctx, c)
+			got, readErr := h.q.GetChallenge(ctx, c.ID)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if description != "Bad Request: message to edit not found" {
+				if err == nil || len(api.messages) != 1 || got.TgApiMessageID != oldID {
+					t.Fatalf("unrelated error created duplicate: %v, %+v", err, got)
+				}
+				return
+			}
+			if err != nil || len(api.messages) != 2 || got.TgApiMessageID == oldID || got.FinishDay != c.FinishDay {
+				t.Fatalf("missing summary not replaced: %v, %+v", err, got)
+			}
+			if api.messages[1].MessageThreadID != 5 {
+				t.Fatalf("wrong topic: %+v", api.messages[1])
+			}
+			api.editError = ""
+			if err := h.publishSummary(ctx, got); err != nil {
+				t.Fatal(err)
+			}
+			if len(api.messages) != 2 || api.edits[len(api.edits)-1].MessageID != int(got.TgApiMessageID) {
+				t.Fatal("retry did not reuse replacement summary")
+			}
+		})
 	}
 }
