@@ -12,6 +12,7 @@ import (
 	"github.com/Sitleman/challenger/internal/challenge"
 	"github.com/Sitleman/challenger/internal/db"
 	"github.com/mymmrac/telego"
+	"github.com/mymmrac/telego/telegoapi"
 )
 
 func (h *handler) stopChallenge(ctx context.Context, msg *telego.Message) {
@@ -72,10 +73,13 @@ func (h *handler) publishSummary(ctx context.Context, c db.Challenge) error {
 			Text: text, ParseMode: telego.ModeHTML,
 			LinkPreviewOptions: &telego.LinkPreviewOptions{IsDisabled: true},
 		})
-		if err != nil && !strings.Contains(err.Error(), "message is not modified") {
+		if err == nil || strings.Contains(err.Error(), "message is not modified") {
+			return nil
+		}
+		var apiErr *telegoapi.Error
+		if !errors.As(err, &apiErr) || apiErr.ErrorCode != 400 || apiErr.Description != "Bad Request: message to edit not found" {
 			return fmt.Errorf("edit summary: %w", err)
 		}
-		return nil
 	}
 	sent, err := h.bot.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: telego.ChatID{ID: c.ChatID}, MessageThreadID: int(c.ThreadID),
