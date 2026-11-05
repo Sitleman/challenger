@@ -21,6 +21,7 @@ const (
 )
 
 type handler struct {
+	version  string
 	bot      *telego.Bot
 	username string
 	q        *db.Queries
@@ -34,6 +35,7 @@ type handler struct {
 func newHandler(ctx context.Context, b *telego.Bot, username string, conn *sql.DB, cfg config.Config) *handler {
 	h := &handler{
 		bot:      b,
+		version:  cfg.Version,
 		username: username,
 		q:        db.New(conn),
 		loc:      cfg.Location,
@@ -86,6 +88,8 @@ func (h *handler) handleMessage(ctx context.Context, msg *telego.Message) {
 		return
 	}
 	switch {
+	case commandName(msg.Text, h.username) == "version":
+		h.reply(ctx, topicOf(msg), "Версия бота: "+h.version)
 	case commandName(msg.Text, h.username) == startChallengeCommand:
 		h.startChallenge(ctx, msg)
 	case commandName(msg.Text, h.username) == stopChallengeCommand:

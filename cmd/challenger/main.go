@@ -14,6 +14,7 @@ import (
 	"github.com/Sitleman/challenger/internal/bot"
 	"github.com/Sitleman/challenger/internal/config"
 	"github.com/Sitleman/challenger/internal/db"
+	"github.com/Sitleman/challenger/internal/health"
 )
 
 const restoreCommand = "restore"
@@ -25,6 +26,9 @@ func main() {
 }
 
 func run(args []string) error {
+	if len(args) == 1 && args[0] == "healthcheck" {
+		return health.Check(health.Path, time.Now())
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -54,6 +58,9 @@ func restore(ctx context.Context, args []string) error {
 }
 
 func serve(ctx context.Context) error {
+	if err := health.Record(health.Path, false); err != nil {
+		return err
+	}
 	cfg, err := config.Load()
 	if err != nil {
 		return err

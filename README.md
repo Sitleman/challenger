@@ -234,3 +234,7 @@ Deploy:    один Go-бинарь + файл SQLite (Railway/VPS)
 24. [ ] Мультикомандность (много групп)
 
 ---
+
+## Релизы
+
+[Stage и production, версии v1/v2, changelog и approval](docs/releases.md).

@@ -17,3 +17,5 @@ spike/message-reaction/message-reaction
 *.db.before-restore-*
 *.db.restoring*
 .backup-*/
+
+__pycache__/

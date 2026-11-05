@@ -11,6 +11,7 @@ import (
 )
 
 type Config struct {
+	Version        string
 	BotToken       string
 	AllowedChatIDs []int64
 	AdminUserIDs   []int64
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 	}
 	return Config{
 		BotToken:       token,
+		Version:        envOr("APP_VERSION", "dev"),
 		AllowedChatIDs: chatIDs,
 		AdminUserIDs:   adminIDs,
 		DBPath:         DBPath(),

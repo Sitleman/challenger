@@ -1,0 +1,26 @@
+services:
+  bot:
+    image: ${IMAGE_REF:?}
+    restart: unless-stopped
+    env_file: ${BOT_ENV_FILE:?}
+    environment:
+      DB_PATH: /data/challenger.db
+      APP_VERSION: ${APP_VERSION:?}
+    volumes:
+      - data:/data
+    stop_grace_period: 60s
+    healthcheck:
+      test: [CMD, /challenger, healthcheck]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  data:
+    external: true
+    name: ${DATA_VOLUME:?}

@@ -51,3 +51,19 @@ func TestEditedMessagesThatCannotBeProofsAreDroppedBeforeStorage(t *testing.T) {
 		})
 	}
 }
+
+func TestVersionRepliesInAllowedTopic(t *testing.T) {
+	h, api := summaryHandler(t)
+	h.version = "v42"
+	msg := summaryCommand(time.Now())
+	msg.Text = "/version@challengerbot"
+	h.handle(context.Background(), telego.Update{Message: msg})
+	if len(api.messages) != 1 || api.messages[0].Text != "Версия бота: v42" || api.messages[0].MessageThreadID != 5 {
+		t.Fatalf("unexpected version response: %+v", api.messages)
+	}
+	msg.Chat.ID = -999
+	h.handle(context.Background(), telego.Update{Message: msg})
+	if len(api.messages) != 1 {
+		t.Fatal("replied outside allowed chat")
+	}
+}
