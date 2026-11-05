@@ -46,7 +46,8 @@ def run(*args, **kwargs):
 
 def compose(config, manifest, *args):
     env = dict(os.environ, IMAGE_REF=manifest["image"], APP_VERSION=manifest["version"],
-               BOT_ENV_FILE=config["env_file"], DATA_VOLUME=config["volume"])
+               BOT_ENV_FILE=config["env_file"], DATA_VOLUME=config["volume"],
+               HEALTHCHECK_DISABLED="true" if manifest["version"] == "v0" else "false")
     return run("docker", "compose", "-p", config["project"], "-f", str(Path(__file__).parents[2] / "deploy/compose.yml"),
                *args, env=env, capture_output=True).stdout.strip()
 

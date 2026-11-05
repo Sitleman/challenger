@@ -43,6 +43,15 @@ jobs:
           push: false
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      - name: Validate deployment Compose
+        env:
+          IMAGE_REF: ghcr.io/sitleman/challenger:validation
+          APP_VERSION: v1
+          DATA_VOLUME: challenger-stage-data
+        run: |
+          export BOT_ENV_FILE="$RUNNER_TEMP/bot.env"
+          touch "$BOT_ENV_FILE"
+          docker compose -f deploy/compose.yml config --quiet
 
   release-tests:
     runs-on: ubuntu-latest
