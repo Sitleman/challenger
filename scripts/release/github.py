@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -28,7 +29,8 @@ def main():
         return
     if args.action == "production-success":
         manifest = validate(read("release.json"))
-        upload(manifest["version"], "production.json", manifest)
+        evidence = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()[:16]
+        upload(manifest["version"], "production-" + evidence + ".json", manifest)
         mark_production(manifest)
         release = release_for(manifest["version"])
         api(f'releases/{release["id"]}', "PATCH", {"draft": False, "prerelease": False,
