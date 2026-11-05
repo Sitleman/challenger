@@ -1,0 +1,31 @@
+name: Prepare production release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Версия, успешно проверенная на stage (например v5)'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prepare-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/master' && github.actor == 'Sitleman'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Prepare editable changelog
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BASE_SHA: ${{ vars.RELEASE_BASE_SHA }}
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/release/github.py prepare --version "$VERSION"

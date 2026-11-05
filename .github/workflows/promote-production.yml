@@ -1,0 +1,61 @@
+name: Promote production
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Подготовленный выпуск с отредактированным changelog (например v5)'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  freeze:
+    if: github.ref == 'refs/heads/master' && github.actor == 'Sitleman' && vars.RELEASE_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      artifact: ${{ steps.artifact.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Freeze image and announcement for approval
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_BASE_SHA: ${{ vars.RELEASE_BASE_SHA }}
+          VERSION: ${{ inputs.version }}
+        run: python3 scripts/release/github.py freeze --version "$VERSION"
+      - uses: actions/upload-artifact@v4
+        id: artifact
+        with:
+          name: production-release-${{ github.run_attempt }}
+          path: release.json
+          retention-days: 90
+
+  deploy:
+    needs: freeze
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+      DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ needs.freeze.outputs.artifact }}
+          merge-multiple: true
+      - run: python3 scripts/release/remote.py deploy production
+      - run: python3 scripts/release/github.py production-success
+      - run: python3 scripts/release/remote.py notify production

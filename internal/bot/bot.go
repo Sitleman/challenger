@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/Sitleman/challenger/internal/config"
+	"github.com/Sitleman/challenger/internal/health"
 	"github.com/mymmrac/telego"
 	"github.com/valyala/fasthttp"
 )
@@ -38,7 +39,15 @@ func Run(ctx context.Context, cfg config.Config, conn *sql.DB) error {
 	polled := make(chan error, 1)
 	go func() {
 		defer close(updates)
-		polled <- poll(workCtx, b.GetUpdates, telego.GetUpdatesParams{
+		fetch := func(ctx context.Context, params *telego.GetUpdatesParams) ([]telego.Update, error) {
+			updates, err := b.GetUpdates(ctx, params)
+			if recordErr := health.Record(health.Path, err == nil && ctx.Err() == nil); recordErr != nil {
+				log.Printf("record readiness: %v", recordErr)
+			}
+			return updates, err
+		}
+		defer func() { _ = health.Record(health.Path, false) }()
+		polled <- poll(workCtx, fetch, telego.GetUpdatesParams{
 			AllowedUpdates: []string{"message", "edited_message", "message_reaction"},
 			Timeout:        30,
 		}, pollRetryDelay, updates)
