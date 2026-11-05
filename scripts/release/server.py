@@ -202,6 +202,7 @@ def rollback(root, config, backup_name):
     run("docker", "image", "inspect", previous["image"], capture_output=True)
     with tarfile.open(backup / "data.tgz", "r:gz") as archive:
         archive.getmembers()
+    write(root / "pending.json", {"backup": str(backup), "target": previous, "phase": "rollback"})
     compose(config, target, "stop", "bot")
     volume = volume_path(config)
     aside = root / ("before-restore-" + str(time.time_ns()))

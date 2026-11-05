@@ -197,6 +197,21 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "restricted"):
                     entrypoint.main()
 
+    def test_failed_manual_rollback_blocks_new_deployments(self):
+        with tempfile.TemporaryDirectory() as directory, ExitStack() as stack:
+            root = Path(directory)
+            backup = root / "backups" / "20261105T000000Z-v4"
+            backup.mkdir(parents=True)
+            (backup / "previous.json").write_text(json.dumps(manifest("v1")))
+            (backup / "target.json").write_text(json.dumps(manifest()))
+            with server.tarfile.open(backup / "data.tgz", "w:gz"):
+                pass
+            stack.enter_context(patch.object(server, "run"))
+            stack.enter_context(patch.object(server, "compose", side_effect=RuntimeError("docker unavailable")))
+            with self.assertRaisesRegex(RuntimeError, "docker unavailable"):
+                server.rollback(root, {}, backup.name)
+            self.assertEqual(json.loads((root / "pending.json").read_text())["phase"], "rollback")
+
     def test_prod_baseline_tracks_rollback_instead_of_largest_version(self):
         responses = [[{"ref": "refs/tags/deployed-production", "object": {"sha": "tag"}}],
                      {"message": json.dumps(manifest("v2"))}]
